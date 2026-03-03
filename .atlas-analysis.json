@@ -1,0 +1,131 @@
+{
+  "projectType": "infrastructure",
+  "projectName": "Safe Settings",
+  "projectDescription": "A GitHub App that manages policy-as-code and enforces repository settings across GitHub organizations",
+  "theme": "aspen",
+  "primaryColor": "#2F81F7",
+  "lightColor": "#5B9EF8",
+  "darkColor": "#1E5FCC",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "how-it-works"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/overview",
+              "deployment/github-app",
+              "deployment/docker",
+              "deployment/aws-lambda",
+              "deployment/kubernetes",
+              "deployment/github-actions"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/overview",
+              "configuration/hierarchy",
+              "configuration/org-settings",
+              "configuration/suborg-settings",
+              "configuration/repo-settings",
+              "configuration/deployment-settings"
+            ]
+          },
+          {
+            "group": "Settings Reference",
+            "pages": [
+              "settings/repository",
+              "settings/branches",
+              "settings/rulesets",
+              "settings/teams",
+              "settings/collaborators",
+              "settings/labels",
+              "settings/environments",
+              "settings/custom-properties",
+              "settings/autolinks",
+              "settings/milestones",
+              "settings/variables"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/custom-validators",
+              "advanced/status-checks",
+              "advanced/restricted-repos",
+              "advanced/drift-prevention",
+              "advanced/performance"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "operations/webhooks",
+              "operations/scheduled-sync",
+              "operations/error-handling",
+              "operations/monitoring"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Examples",
+        "groups": [
+          {
+            "group": "Configuration Examples",
+            "pages": [
+              "examples/overview",
+              "examples/basic-setup",
+              "examples/branch-protection",
+              "examples/team-management",
+              "examples/multi-level-config",
+              "examples/custom-validation"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API",
+        "groups": [
+          {
+            "group": "Reference",
+            "pages": [
+              "api/overview",
+              "api/environment-variables",
+              "api/webhook-events"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Policy-as-Code for GitHub Organizations",
+    "Multi-level configuration hierarchy (org, suborg, repo)",
+    "Branch protection and repository rulesets management",
+    "Team and collaborator permissions enforcement",
+    "Automated drift prevention via webhooks",
+    "Pull request validation with dry-run mode",
+    "Custom validation rules",
+    "Scheduled sync for configuration enforcement",
+    "Repository settings management (visibility, topics, custom properties)",
+    "Environment configurations with deployment protection"
+  ],
+  "publicApiSurface": [
+    "Webhook Events: push, repository.created, branch_protection_rule, repository.edited, repository.renamed, pull_request.opened, check_suite.requested, repository_ruleset, member, team, custom_property_values",
+    "Settings Plugins: repository, branches, rulesets, teams, collaborators, labels, milestones, autolinks, environments, custom_properties, variables",
+    "Configuration Files: .github/settings.yml (org), .github/suborgs/*.yml (suborg), .github/repos/*.yml (repo)",
+    "Environment Variables: ADMIN_REPO, CONFIG_PATH, SETTINGS_FILE_PATH, DEPLOYMENT_CONFIG_FILE, CRON, ENABLE_PR_COMMENT, BLOCK_REPO_RENAME_BY_HUMAN",
+    "Deployment Targets: Docker, AWS Lambda, Kubernetes, GitHub Actions, Heroku"
+  ]
+}

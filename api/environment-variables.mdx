@@ -1,0 +1,332 @@
+---
+title: Environment Variables
+description: Complete reference for all Safe Settings environment variables including descriptions, defaults, and examples
+---
+
+# Environment Variables
+
+Safe Settings is configured through environment variables. This page provides a complete reference of all available variables.
+
+## Required Variables
+
+These variables are required for Safe Settings to function:
+
+<ParamField path="APP_ID" type="string" required>
+  The unique identifier for your GitHub App. You can find this in your [GitHub App settings page](https://github.com/settings/apps).
+  
+  **Example**: `123456`
+</ParamField>
+
+<ParamField path="WEBHOOK_SECRET" type="string" required>
+  The webhook secret used to verify that webhook payloads are coming from GitHub. Generate this when creating your GitHub App.
+  
+  **Example**: `development` or generate with `openssl rand -base64 32`
+</ParamField>
+
+<ParamField path="PRIVATE_KEY" type="string">
+  The contents of your GitHub App's private key, base64-encoded. This is the preferred method for providing the private key.
+  
+  <Note>
+    `PRIVATE_KEY` takes precedence over `PRIVATE_KEY_PATH`.
+  </Note>
+  
+  **Example**: `LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0t...`
+</ParamField>
+
+<ParamField path="PRIVATE_KEY_PATH" type="string">
+  Path to your GitHub App's private key file. Use this if you prefer to store the key as a file rather than encoding it.
+  
+  **Default**: `.data/private-key.pem` (in some deployment scenarios)
+  
+  **Example**: `/path/to/private-key.pem`
+</ParamField>
+
+## Configuration Variables
+
+These variables control how Safe Settings locates and processes configuration files:
+
+<ParamField path="ADMIN_REPO" type="string" default="admin">
+  The name of the repository where Safe Settings configuration files are stored. This repository should contain `settings.yml` and repository-specific configuration files.
+  
+  **Default**: `admin`
+  
+  **Example**: `safe-settings-config` or `.github`
+</ParamField>
+
+<ParamField path="CONFIG_PATH" type="string" default=".github">
+  The directory path within the admin repository where configuration files are located.
+  
+  **Default**: `.github`
+  
+  **Example**: `.config` or `config`
+</ParamField>
+
+<ParamField path="SETTINGS_FILE_PATH" type="string" default="settings.yml">
+  The filename for the global settings configuration file within the admin repository.
+  
+  **Default**: `settings.yml`
+  
+  **Example**: `safe-settings.yml` or `global-settings.yml`
+</ParamField>
+
+<ParamField path="DEPLOYMENT_CONFIG_FILE" type="string" default="deployment-settings.yml">
+  The filename for deployment-specific configuration that is loaded from the filesystem (not from the repository). This file is loaded once at startup and cached.
+  
+  **Default**: `deployment-settings.yml`
+  
+  **Example**: `safe-settings-deployment.yml`
+  
+  **Note**: If this file doesn't exist, Safe Settings uses a default configuration with restricted repos: `['admin', '.github', 'safe-settings']`
+</ParamField>
+
+## Feature Toggles
+
+These variables enable or disable specific features:
+
+<ParamField path="CREATE_PR_COMMENT" type="string" default="true">
+  Controls whether Safe Settings posts comments on pull requests in the admin repository with validation results and NOP (no-operation) output.
+  
+  **Default**: `true`
+  
+  **Accepted values**: `true` or `false`
+  
+  **Example**: Set to `false` to disable PR comments
+</ParamField>
+
+<ParamField path="ENABLE_PR_COMMENT" type="string">
+  Alternative name for `CREATE_PR_COMMENT`. Use this to enable PR comments if not set by default.
+  
+  **Accepted values**: `true` or `false`
+  
+  **Example**: `true`
+</ParamField>
+
+<ParamField path="CREATE_ERROR_ISSUE" type="string" default="true">
+  Controls whether Safe Settings creates issues in the admin repository when synchronization errors occur.
+  
+  **Default**: `true`
+  
+  **Accepted values**: `true` or `false`
+  
+  **Example**: Set to `false` to disable error issue creation
+</ParamField>
+
+<ParamField path="BLOCK_REPO_RENAME_BY_HUMAN" type="string" default="false">
+  When set to `true`, Safe Settings will prevent repository renames by humans and revert them back to the original name. Bot renames are still allowed.
+  
+  **Default**: `false`
+  
+  **Accepted values**: `true` or `false`
+  
+  **Example**: Set to `true` to enforce repository naming through Safe Settings configuration only
+</ParamField>
+
+<ParamField path="FULL_SYNC_NOP" type="string" default="false">
+  When set to `true`, enables a "no-operation" mode for full synchronization that shows what would be changed without actually making changes.
+  
+  **Default**: `false`
+  
+  **Accepted values**: `true` or `false`
+  
+  **Example**: Set to `true` for testing configuration changes
+</ParamField>
+
+## Scheduling
+
+<ParamField path="CRON" type="string">
+  A cron expression that defines when Safe Settings should run a full synchronization of all repositories. Uses standard cron syntax.
+  
+  **Format**: `* * * * *` (minute hour day month weekday)
+  
+  **Examples**:
+  - `0 * * * *` - Every hour at minute 0
+  - `0 0 * * *` - Every day at midnight
+  - `*/15 * * * *` - Every 15 minutes
+  
+  <Warning>
+    Be mindful of GitHub API rate limits when setting frequent sync schedules.
+  </Warning>
+</ParamField>
+
+## Logging
+
+<ParamField path="LOG_LEVEL" type="string" default="info">
+  Controls the verbosity of application logs. Higher levels include all lower level logs.
+  
+  **Default**: `info`
+  
+  **Accepted values**:
+  - `fatal` - Only fatal errors
+  - `error` - Errors and fatal
+  - `warn` - Warnings, errors, and fatal
+  - `info` - General info plus all above
+  - `debug` - Debug info plus all above
+  - `trace` - Detailed trace logs plus all above
+  
+  **Example**: Set to `trace` for maximum verbosity during troubleshooting
+</ParamField>
+
+## GitHub Enterprise Server
+
+These variables are required for GitHub Enterprise Server deployments:
+
+<ParamField path="GHE_HOST" type="string">
+  The hostname of your GitHub Enterprise Server instance (without protocol).
+  
+  **Example**: `github.company.com` or `github.mycompany.com`
+  
+  <Note>
+    When `GHE_HOST` is set, Safe Settings automatically uses it as the API base URL.
+  </Note>
+</ParamField>
+
+<ParamField path="GHE_PROTOCOL" type="string" default="https">
+  The protocol to use when connecting to GitHub Enterprise Server.
+  
+  **Default**: `https`
+  
+  **Accepted values**: `http` or `https`
+  
+  **Example**: `https`
+</ParamField>
+
+## Development & Testing
+
+<ParamField path="GH_ORG" type="string">
+  The organization name where you want to register the app using the GitHub App manifest flow. Used during initial app setup.
+  
+  **Example**: `my-organization`
+  
+  <Info>
+    If set, the app is registered for an organization (`https://github.com/organizations/ORGANIZATION/settings/apps/new`). If not set, it's registered for your user account (`https://github.com/settings/apps/new`).
+  </Info>
+</ParamField>
+
+<ParamField path="WEBHOOK_PROXY_URL" type="string">
+  A webhook proxy URL (like smee.io) for local development. This forwards GitHub webhooks to your local development environment.
+  
+  **Example**: `https://smee.io/abc123def456`
+  
+  <Tip>
+    Go to [https://smee.io/new](https://smee.io/new) to create a new webhook proxy URL for local development.
+  </Tip>
+</ParamField>
+
+<ParamField path="NODE_ENV" type="string" default="development">
+  The Node.js environment mode.
+  
+  **Default**: `development`
+  
+  **Accepted values**: `development`, `production`, `test`
+  
+  **Example**: Set to `production` for production deployments
+</ParamField>
+
+<ParamField path="NODE_TLS_REJECT_UNAUTHORIZED" type="string" default="1">
+  Controls SSL certificate validation. Setting to `0` disables SSL validation (not recommended for production).
+  
+  **Default**: `1` (enabled)
+  
+  **Accepted values**: `0` (disabled) or `1` (enabled)
+  
+  <Warning>
+    Only set to `0` in development environments with self-signed certificates. Never disable SSL validation in production.
+  </Warning>
+</ParamField>
+
+## Proxy Configuration
+
+These standard environment variables are automatically detected for proxy support:
+
+<ParamField path="http_proxy" type="string">
+  HTTP proxy URL for outbound HTTP requests.
+  
+  **Example**: `http://proxy.company.com:8080`
+</ParamField>
+
+<ParamField path="https_proxy" type="string">
+  HTTPS proxy URL for outbound HTTPS requests.
+  
+  **Example**: `https://proxy.company.com:8443`
+</ParamField>
+
+## Configuration Priority
+
+Safe Settings loads configuration from multiple sources with the following priority (highest to lowest):
+
+1. **Runtime configuration**: Settings from the `settings.yml` file in the admin repository
+2. **Deployment configuration**: Settings from the `DEPLOYMENT_CONFIG_FILE` on the filesystem
+3. **Environment variables**: Individual settings from environment variables
+4. **Default values**: Built-in defaults
+
+## Example Configuration Files
+
+### .env File Example
+
+```bash
+# Required
+APP_ID=123456
+WEBHOOK_SECRET=your-webhook-secret
+PRIVATE_KEY="LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0t..."
+
+# Configuration
+ADMIN_REPO=safe-settings-config
+SETTINGS_FILE_PATH=settings.yml
+
+# Features
+CREATE_PR_COMMENT=true
+CREATE_ERROR_ISSUE=true
+BLOCK_REPO_RENAME_BY_HUMAN=true
+
+# Scheduling
+CRON="0 */6 * * *"  # Every 6 hours
+
+# Logging
+LOG_LEVEL=info
+
+# GitHub Enterprise (if applicable)
+# GHE_HOST=github.company.com
+# GHE_PROTOCOL=https
+```
+
+### Docker Compose Example
+
+```yaml
+version: '3.8'
+services:
+  safe-settings:
+    image: safe-settings:latest
+    environment:
+      - APP_ID=${APP_ID}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+      - PRIVATE_KEY=${PRIVATE_KEY}
+      - ADMIN_REPO=admin
+      - LOG_LEVEL=info
+      - CRON=0 * * * *
+    ports:
+      - "3000:3000"
+```
+
+### Kubernetes ConfigMap/Secret Example
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: safe-settings-secrets
+type: Opaque
+stringData:
+  APP_ID: "123456"
+  WEBHOOK_SECRET: "your-webhook-secret"
+  PRIVATE_KEY: "LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0t..."
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: safe-settings-config
+data:
+  ADMIN_REPO: "admin"
+  LOG_LEVEL: "info"
+  CREATE_PR_COMMENT: "true"
+  BLOCK_REPO_RENAME_BY_HUMAN: "true"
+```

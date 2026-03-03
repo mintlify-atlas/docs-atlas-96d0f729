@@ -1,0 +1,480 @@
+---
+title: Error Handling
+description: Understanding how Safe Settings handles errors, reports failures, and provides feedback during configuration validation and application
+---
+
+Safe Settings includes comprehensive error handling mechanisms to catch configuration errors, validation failures, and API issues. All errors are reported through check runs in the admin repository and detailed logging.
+
+## Error Handling Strategy
+
+Safe Settings uses different error handling approaches depending on the execution mode:
+
+### NOP Mode (Dry-Run)
+
+When running in **NOP mode** (during PR validation), errors are collected and reported without stopping execution:
+
+- **Continues processing:** Other repositories are still validated even if one fails
+- **Collects all errors:** Builds a comprehensive error report
+- **Creates NopCommand objects:** Structured error representation
+- **Updates PR check:** Reports all errors in the check run
+
+**Source:** `lib/settings.js:36-44`
+
+```javascript
+try {
+  await settings.loadConfigs()
+  await settings.updateRepos(repo)
+  await settings.handleResults()
+} catch (error) {
+  settings.logError(error.message)
+  await settings.handleResults()
+}
+```
+
+### Live Mode
+
+When running in **live mode** (processing actual changes):
+
+- **Throws exceptions:** Failures halt processing for the affected operation
+- **Creates check runs:** Reports success or failure in admin repo
+- **Logs errors:** Detailed error messages for debugging
+
+**Source:** `index.js:35-48`
+
+```javascript
+if (nop) {
+  const nopcommand = new NopCommand(filename, repo, null, e, 'ERROR')
+  robot.log.error(`NOPCOMMAND ${JSON.stringify(nopcommand)}`)
+  Settings.handleError(nop, context, repo, deploymentConfig, ref, nopcommand)
+} else {
+  throw e
+}
+```
+
+## Error Types
+
+### Configuration Errors
+
+**What causes them:**
+- Invalid YAML syntax in settings files
+- Missing required fields in configuration
+- Incorrect data types (e.g., string instead of number)
+- Deployment config file not found
+
+**How they're reported:**
+- Caught during config loading
+- Logged with full error details
+- Reported in check run as validation failure
+- NopCommand created with ERROR type
+
+**Source:** `lib/settings.js:554-593`
+
+### Validation Errors
+
+**What causes them:**
+- Custom validation rules fail (`configvalidators`)
+- Override validation rules fail (`overridevalidators`)
+- Settings violate organizational policies
+
+**Example:** Branch protection override attempting to reduce required approvers
+
+**How they're reported:**
+- Validation functions return `false`
+- Error message from validator is thrown
+- Processing stops for that configuration
+- Detailed error appears in check run
+
+**Source:** `lib/settings.js:476-493`
+
+```javascript
+const overridevalidator = this.overridevalidators[section]
+if (overridevalidator) {
+  if (!overridevalidator.canOverride(baseConfig, overrideConfig, this.github)) {
+    this.log.error(`Error in calling overridevalidator for key ${section} ${overridevalidator.error}`)
+    throw new Error(overridevalidator.error)
+  }
+}
+```
+
+### API Errors
+
+**What causes them:**
+- GitHub API rate limiting
+- Insufficient permissions
+- Network connectivity issues
+- Invalid API requests
+- Resources not found (404 errors)
+
+**How they're handled:**
+- Probot automatically retries rate-limited requests
+- Errors are logged with full details
+- 404 errors often indicate missing resources (expected in some cases)
+- Check runs report API failures
+
+**Source:** `lib/settings.js:555-592`
+
+### Repository Access Errors
+
+**What causes them:**
+- Repository doesn't exist
+- App doesn't have access to repository
+- Admin repository not found
+- Insufficient permissions
+
+**How they're handled:**
+- 404 errors are caught and logged
+- Graceful degradation (skips inaccessible repos)
+- Reports error in check run
+
+**Source:** `lib/settings.js:166-173`
+
+## Error Reporting Mechanisms
+
+### Check Runs in Admin Repository
+
+After every sync operation (whether triggered by webhook or cron), Safe Settings creates a check run in the admin repository.
+
+<Steps>
+
+### Collect errors during execution
+
+Errors are accumulated in the `errors` array throughout processing.
+
+### Fetch latest commit
+
+Retrieves the most recent commit SHA from the admin repository's default branch.
+
+### Determine conclusion
+
+- **Success:** No errors encountered
+- **Failure:** One or more errors occurred
+
+### Create check run
+
+Uses GitHub Checks API to create a check run with:
+- Name: "Safe-Settings"
+- Status: "completed"
+- Conclusion: "success" or "failure"
+- Started/completed timestamps
+- Detailed error output
+
+</Steps>
+
+**Source:** `lib/settings.js:129-174`
+
+```javascript
+async createCheckRun () {
+  const startTime = new Date()
+  let conclusion = 'success'
+  let summary = 'Safe-Settings finished successfully.'
+
+  if (this.errors.length > 0) {
+    conclusion = 'failure'
+    summary = 'Safe-Settings finished with errors.'
+    details = await eta.renderString(errorTemplate, this.errors)
+  }
+
+  return this.github.repos.listCommits({
+    owner: this.repo.owner,
+    repo: env.ADMIN_REPO
+  })
+  .then(commits => {
+    return this.github.checks.create({
+      owner: this.repo.owner,
+      repo: env.ADMIN_REPO,
+      name: 'Safe-Settings',
+      head_sha: commits.data[0].sha,
+      status: 'completed',
+      started_at: startTime,
+      conclusion,
+      completed_at: new Date(),
+      output: {
+        title: 'Safe-Settings',
+        summary,
+        text: details
+      }
+    })
+  })
+}
+```
+
+### Check Run Output Structure
+
+Check runs include:
+
+- **Title:** "Safe-Settings" or "Safe-Settings Dry-Run Finished with Error/success"
+- **Summary:** High-level status message
+- **Details:** Rendered from error template with:
+  - Repository name
+  - Plugin that failed
+  - Error message
+  - Additions/modifications/deletions attempted
+
+**Source:** `lib/settings.js:129-174`
+
+### NopCommand Structure
+
+Errors in NOP mode are represented as `NopCommand` objects:
+
+**Source:** `lib/nopcommand.js:1-21`
+
+```javascript
+class NopCommand {
+  constructor (pluginName, repo, endpoint, action, type = 'INFO') {
+    this.type = type              // 'ERROR', 'INFO', etc.
+    this.plugin = pluginName      // Which plugin encountered the error
+    this.repo = repo.repo         // Repository name
+    this.endpoint = endpoint ? endpoint.url : ''
+    this.body = endpoint ? endpoint.body : ''
+    
+    if (typeof action === 'string') {
+      this.action = { 
+        msg: action,              // Error message
+        additions: null,
+        modifications: null,
+        deletions: null
+      }
+    } else {
+      this.action = action
+    }
+  }
+}
+```
+
+### Logging
+
+All errors are logged using the Probot logger:
+
+**Source:** `lib/settings.js:176-184`
+
+```javascript
+logError (msg) {
+  this.log.error(msg)
+  this.errors.push({
+    owner: this.repo.owner,
+    repo: this.repo.repo,
+    msg,
+    plugin: this.constructor.name
+  })
+}
+```
+
+## PR Validation Error Handling
+
+When validating configuration changes in pull requests, Safe Settings provides detailed feedback.
+
+### Validation Process
+
+<Steps>
+
+### PR opened/updated
+
+Check run is created with status "in_progress".
+
+### Detect changed files
+
+Lists all modified files in the PR.
+
+### Run NOP mode validation
+
+Executes Safe Settings with the PR branch ref in dry-run mode.
+
+### Collect results
+
+Gathers all NopCommand objects (both errors and changes).
+
+### Update check run
+
+- **Success:** All validations pass
+- **Failure:** One or more validation errors
+- Detailed output with all errors and proposed changes
+
+### Create PR comment (optional)
+
+If `ENABLE_PR_COMMENT=true`, posts a formatted table to the PR.
+
+</Steps>
+
+**Source:** `index.js:541-613`
+
+### PR Check Output
+
+The check run includes:
+
+```markdown
+#### :robot: Safe-Settings config changes detected:
+
+| Msg | Plugin | Repo | Additions | Deletions | Modifications |
+|-----|--------|------|-----------|-----------|---------------|
+| ❗ Error message | branches | my-repo | {...} | {...} | {...} |
+| ✋ | teams | another-repo | {...} | {...} | {...} |
+```
+
+**Source:** `lib/settings.js:262-294`
+
+### Validation Error Example
+
+```yaml
+# .github/settings.yml - This will fail validation
+branches:
+  - name: main
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 1  # Trying to reduce from 2
+
+overridevalidators:
+  - plugin: branches
+    error: |
+      Branch protection required_approving_review_count cannot be overidden to a lower value
+    script: |
+      if (baseconfig.protection.required_pull_request_reviews.required_approving_review_count) {
+        return overrideconfig.protection.required_pull_request_reviews.required_approving_review_count >= baseconfig.protection.required_pull_request_reviews.required_approving_review_count
+      }
+      return true
+```
+
+This would produce an error in the check run:
+
+```
+❌ Branch protection required_approving_review_count cannot be overidden to a lower value
+```
+
+**Source:** `README.md:246-263`
+
+## Error Recovery
+
+### Automatic Recovery
+
+- **Scheduled sync:** Automatically retries failed operations on next sync
+- **Webhook retry:** GitHub automatically retries failed webhook deliveries
+- **Rate limit handling:** Probot automatically waits and retries
+
+### Manual Recovery
+
+<AccordionGroup>
+
+<Accordion title="Fix configuration errors">
+1. Review error message in check run
+2. Correct the YAML syntax or configuration
+3. Commit the fix to the admin repository
+4. Safe Settings automatically processes the corrected config
+</Accordion>
+
+<Accordion title="Address validation failures">
+1. Review the validation error message
+2. Either:
+   - Adjust the configuration to meet validation rules
+   - Update the validation rule if requirements changed
+3. Commit and push the changes
+</Accordion>
+
+<Accordion title="Handle API permission errors">
+1. Verify GitHub App has required permissions
+2. Check that repositories are accessible
+3. Ensure admin repository exists and is accessible
+4. Reinstall GitHub App if necessary
+</Accordion>
+
+<Accordion title="Resolve rate limiting">
+1. Reduce sync frequency (adjust CRON schedule)
+2. Optimize configuration to minimize API calls
+3. Consider GitHub Enterprise with higher rate limits
+4. Wait for rate limit to reset (typically 1 hour)
+</Accordion>
+
+</AccordionGroup>
+
+## Debugging Errors
+
+### Enable Debug Logging
+
+```bash .env
+LOG_LEVEL=debug
+# or for maximum detail
+LOG_LEVEL=trace
+```
+
+**Source:** `README.md:524-527`
+
+### Check Run Details
+
+Click on failed check runs in the admin repository to view:
+- Full error messages
+- Stack traces (in debug mode)
+- API endpoints called
+- Request/response bodies
+
+### Review Logs
+
+Check your deployment logs for:
+- Error stack traces
+- API call details
+- Configuration loading issues
+- Validation failures
+
+### Common Issues
+
+<AccordionGroup>
+
+<Accordion title="Error: Admin Repo Not found">
+**Cause:** The admin repository doesn't exist or the app doesn't have access.
+
+**Solution:**
+1. Verify admin repository exists
+2. Check `ADMIN_REPO` environment variable
+3. Ensure GitHub App is installed on the organization
+4. Verify repository permissions
+</Accordion>
+
+<Accordion title="Error: YAML parsing failed">
+**Cause:** Invalid YAML syntax in configuration file.
+
+**Solution:**
+1. Use a YAML validator to check syntax
+2. Check for correct indentation (spaces, not tabs)
+3. Ensure proper quoting of special characters
+4. Validate with online YAML linters
+</Accordion>
+
+<Accordion title="Error: Multiple suborg configs for repository">
+**Cause:** Repository matches multiple suborg configuration patterns.
+
+**Solution:**
+1. Review suborg configurations for overlaps
+2. Make patterns more specific
+3. Use `exclude` to prevent conflicts
+4. Ensure repository only belongs to one suborg
+
+**Source:** `lib/settings.js:824-829`
+</Accordion>
+
+<Accordion title="Error: Validation failed">
+**Cause:** Custom validation rule rejected the configuration.
+
+**Solution:**
+1. Read the validation error message carefully
+2. Review the validation script in `deployment-settings.yml`
+3. Adjust configuration to meet validation requirements
+4. Update validation rules if they're too restrictive
+</Accordion>
+
+</AccordionGroup>
+
+## Best Practices
+
+<Warning>
+Always test configuration changes in a PR before merging to the default branch. Use the dry-run validation to catch errors early.
+</Warning>
+
+<Tip>
+Monitor check runs regularly to catch and address errors quickly. Set up notifications for failed check runs in your admin repository.
+</Tip>
+
+1. **Use PR validation:** Always create PRs for config changes to catch errors before they're applied
+2. **Test with small changes:** Make incremental changes rather than large batch updates
+3. **Monitor check runs:** Regularly review check run results in the admin repository
+4. **Enable PR comments:** Set `ENABLE_PR_COMMENT=true` for detailed validation feedback
+5. **Set appropriate log levels:** Use `debug` during setup, `info` in production
+6. **Document custom validators:** Clearly document validation rules and their purpose
+7. **Handle 404 gracefully:** Some 404 errors are expected (e.g., missing repo configs)
+8. **Review logs regularly:** Check logs for patterns of errors or warnings

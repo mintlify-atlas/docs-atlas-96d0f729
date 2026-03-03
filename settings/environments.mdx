@@ -1,0 +1,382 @@
+---
+title: Environments
+description: Configure deployment environments with protection rules, reviewers, and variables
+---
+
+The `environments` section configures deployment environments for GitHub Actions workflows. Environments provide deployment protection rules, reviewers, branch policies, and environment-specific variables.
+
+## Basic Configuration
+
+<ParamField path="name" type="string" required>
+  The name of the environment. This will be referenced in workflows with `environment: <name>`. Names are automatically converted to lowercase.
+  
+  ```yaml
+  environments:
+    - name: production
+  ```
+</ParamField>
+
+## Wait Timer
+
+<ParamField path="wait_timer" type="integer" default="0">
+  The amount of time to delay a job after the job is initially triggered. The time (in minutes) must be an integer between 0 and 43,200 (30 days).
+  
+  ```yaml
+  environments:
+    - name: production
+      wait_timer: 30  # Wait 30 minutes before deployment
+  ```
+</ParamField>
+
+## Reviewers
+
+<ParamField path="prevent_self_review" type="boolean" default="false">
+  Whether a user who created the job is prevented from approving their own job.
+  
+  ```yaml
+  environments:
+    - name: production
+      prevent_self_review: true
+  ```
+</ParamField>
+
+<ParamField path="reviewers" type="array">
+  The people or teams that may review jobs that reference the environment. You can list up to six users or teams as reviewers. Only one of the required reviewers needs to approve the job for it to proceed.
+  
+  **Important**: Reviewers must be given explicit access to the repository as either a team or collaborator before they can be added as environment reviewers.
+  
+  <ParamField path="type" type="string" required>
+    The type of reviewer. Can be:
+    - `User` - An individual user
+    - `Team` - A team
+  </ParamField>
+  
+  <ParamField path="id" type="integer" required>
+    The ID of the user or team who can review the deployment.
+    
+    To get IDs:
+    - **Team**: `gh api /orgs/<org>/teams/<team-slug> | jq .id`
+    - **User**: `gh api /users/<username> | jq .id`
+  </ParamField>
+  
+  ```yaml
+  environments:
+    - name: production
+      prevent_self_review: true
+      reviewers:
+        - type: Team
+          id: 1234647
+        - type: User
+          id: 139262123
+  ```
+</ParamField>
+
+## Deployment Branch Policy
+
+<ParamField path="deployment_branch_policy" type="object or null">
+  The type of deployment branch policy for this environment. Set to `null` to allow all branches to deploy.
+  
+  <ParamField path="protected_branches" type="boolean" required>
+    Whether only branches with branch protection rules can deploy to this environment. 
+    
+    - If `protected_branches` is `true`, `custom_branch_policies` must be `false`
+    - If `protected_branches` is `false`, `custom_branch_policies` must be an array
+  </ParamField>
+  
+  <ParamField path="custom_branch_policies" type="array or boolean">
+    Whether only branches that match the specified name patterns can deploy to this environment.
+    
+    - If `custom_branch_policies` is `false`, `protected_branches` must be `true`
+    - If `custom_branch_policies` is an array, `protected_branches` must be `false`
+    
+    Each policy can be:
+    - A string (branch name pattern) - automatically treated as `type: branch`
+    - An object with `names` array and `type` field
+    
+    <ParamField path="names" type="array">
+      Array of branch or tag name patterns.
+    </ParamField>
+    
+    <ParamField path="type" type="string">
+      The type of ref. Can be:
+      - `branch` - Branch patterns
+      - `tag` - Tag patterns
+    </ParamField>
+  </ParamField>
+  
+  ### Allow All Branches
+  
+  ```yaml
+  environments:
+    - name: development
+      deployment_branch_policy: null
+  ```
+  
+  ### Protected Branches Only
+  
+  ```yaml
+  environments:
+    - name: production
+      deployment_branch_policy:
+        protected_branches: true
+        custom_branch_policies: false
+  ```
+  
+  ### Custom Branch Patterns
+  
+  ```yaml
+  environments:
+    - name: production
+      deployment_branch_policy:
+        protected_branches: false
+        custom_branch_policies:
+          - names: ['main', 'release']
+            type: branch
+          - names: ['v*.*.*']
+            type: tag
+  ```
+  
+  ### Simplified String Format
+  
+  ```yaml
+  environments:
+    - name: production
+      deployment_branch_policy:
+        protected_branches: false
+        custom_branch_policies:
+          - main
+          - release/*
+  ```
+</ParamField>
+
+## Environment Variables
+
+<ParamField path="variables" type="array">
+  Environment variables that can be referenced in GitHub Actions workflows. Variable names are automatically converted to lowercase.
+  
+  <ParamField path="name" type="string" required>
+    The name of the variable.
+  </ParamField>
+  
+  <ParamField path="value" type="string" required>
+    The value of the variable.
+  </ParamField>
+  
+  ```yaml
+  environments:
+    - name: production
+      variables:
+        - name: API_URL
+          value: https://api.example.com
+        - name: MAX_RETRIES
+          value: '3'
+  ```
+</ParamField>
+
+## Deployment Protection Rules
+
+<ParamField path="deployment_protection_rules" type="array">
+  Custom deployment protection rules provided by GitHub Apps.
+  
+  <ParamField path="app_id" type="integer" required>
+    The GitHub App installation ID that provides the deployment protection rule.
+  </ParamField>
+  
+  <ParamField path="id" type="integer">
+    The ID of the deployment protection rule (used internally by Safe Settings).
+  </ParamField>
+  
+  ```yaml
+  environments:
+    - name: production
+      deployment_protection_rules:
+        - app_id: 25112
+  ```
+</ParamField>
+
+## Complete Examples
+
+### Development Environment
+
+```yaml
+environments:
+  - name: development
+    wait_timer: 0
+    deployment_branch_policy: null  # Allow all branches
+    variables:
+      - name: API_URL
+        value: https://dev-api.example.com
+      - name: DEBUG
+        value: 'true'
+```
+
+### Staging Environment
+
+```yaml
+environments:
+  - name: staging
+    wait_timer: 5
+    prevent_self_review: false
+    reviewers:
+      - type: Team
+        id: 5678
+    deployment_branch_policy:
+      protected_branches: false
+      custom_branch_policies:
+        - names: ['main', 'develop']
+          type: branch
+    variables:
+      - name: API_URL
+        value: https://staging-api.example.com
+      - name: LOG_LEVEL
+        value: info
+```
+
+### Production Environment
+
+```yaml
+environments:
+  - name: production
+    wait_timer: 30
+    prevent_self_review: true
+    reviewers:
+      - type: Team
+        id: 1234647  # Platform team
+      - type: User
+        id: 139262123  # Lead engineer
+    deployment_branch_policy:
+      protected_branches: false
+      custom_branch_policies:
+        - names: ['main']
+          type: branch
+        - names: ['v*.*.*']
+          type: tag
+    deployment_protection_rules:
+      - app_id: 25112  # Custom approval app
+    variables:
+      - name: API_URL
+        value: https://api.example.com
+      - name: LOG_LEVEL
+        value: warn
+      - name: MAX_CONNECTIONS
+        value: '100'
+```
+
+### Multiple Environments
+
+```yaml
+teams:
+  - name: platform-team
+    permission: write
+
+collaborators:
+  - username: lead-engineer
+    permission: write
+
+environments:
+  - name: development
+    wait_timer: 0
+    deployment_branch_policy: null
+    variables:
+      - name: ENV_NAME
+        value: development
+  
+  - name: staging
+    wait_timer: 5
+    reviewers:
+      - type: Team
+        id: 1234647
+    deployment_branch_policy:
+      protected_branches: false
+      custom_branch_policies:
+        - names: ['main', 'develop']
+          type: branch
+    variables:
+      - name: ENV_NAME
+        value: staging
+  
+  - name: production
+    wait_timer: 30
+    prevent_self_review: true
+    reviewers:
+      - type: Team
+        id: 1234647
+      - type: User
+        id: 139262123
+    deployment_branch_policy:
+      protected_branches: false
+      custom_branch_policies:
+        - names: ['main']
+          type: branch
+        - names: ['v*.*.*']
+          type: tag
+    variables:
+      - name: ENV_NAME
+        value: production
+```
+
+## Important Notes
+
+### Reviewer Access
+
+Reviewers **must** be given explicit access to the repository before they can be added as environment reviewers. Add them to the `teams` or `collaborators` section:
+
+```yaml
+teams:
+  - name: super-friends
+    permission: write
+
+collaborators:
+  - username: KalEl
+    permission: write
+
+environments:
+  - name: production
+    reviewers:
+      - type: Team
+        id: 1234647  # ID for super-friends team
+      - type: User
+        id: 139262123  # ID for KalEl
+```
+
+### Branch Policy Validation
+
+- You cannot set both `protected_branches: true` and provide `custom_branch_policies`
+- You must specify either `protected_branches: true` or provide `custom_branch_policies`
+- Setting `deployment_branch_policy: null` allows all branches to deploy
+
+### Variable Names
+
+- Environment variable names are converted to lowercase by Safe Settings
+- In your workflow, reference them as configured: `${{ vars.API_URL }}`
+
+## Using Environments in Workflows
+
+Once configured, reference the environment in your workflow:
+
+```yaml
+name: Deploy
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://example.com
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy
+        run: |
+          echo "Deploying to ${{ vars.API_URL }}"
+          # deployment steps
+```
+
+## API Reference
+
+For more details, see GitHub's REST API documentation:
+- [Create or update an environment](https://docs.github.com/en/rest/deployments/environments#create-or-update-an-environment)
+- [Create a deployment branch policy](https://docs.github.com/en/rest/deployments/branch-policies#create-a-deployment-branch-policy)
+- [Create an environment variable](https://docs.github.com/en/rest/actions/variables#create-an-environment-variable)

@@ -1,0 +1,617 @@
+---
+title: Restricted Repositories
+description: Control which repositories Safe Settings manages using include and exclude patterns with glob matching
+---
+
+Restricted repositories configuration allows you to control the scope of Safe Settings by specifying which repositories it should manage and which it should ignore.
+
+## Why Restrict Repositories?
+
+You may want to exclude certain repositories from Safe Settings management for several reasons:
+
+- **Special-purpose repos**: Admin, config, or tooling repositories
+- **External projects**: Forked or imported repositories
+- **Legacy systems**: Repos with custom configurations not yet migrated
+- **Test repositories**: Temporary or experimental repos
+- **Manual control**: Repos requiring hands-on management
+
+## Configuration Location
+
+Restricted repositories are configured in `deployment-settings.yml`, which should be located in the directory where Safe Settings runs (not in your admin repository).
+
+## Default Behavior
+
+Without a `deployment-settings.yml` file, Safe Settings automatically excludes:
+
+- `admin`
+- `.github`
+- `safe-settings`
+
+This prevents Safe Settings from modifying its own configuration repositories.
+
+## Configuration Syntax
+
+### Simple Array (Include Only)
+
+The simplest form lists repositories to include:
+
+```yaml deployment-settings.yml
+restrictedRepos:
+  - admin
+  - .github
+  - safe-settings
+```
+
+<Note>
+When using simple array syntax, these are treated as repositories to **exclude** (for backward compatibility).
+</Note>
+
+### Include and Exclude
+
+For more control, use explicit `include` and `exclude` lists:
+
+```yaml deployment-settings.yml
+restrictedRepos:
+  include:
+    - api
+    - core-*
+    - frontend-*
+  exclude:
+    - admin
+    - .github
+    - safe-settings
+    - test-*
+```
+
+## Pattern Matching
+
+Restricted repos support glob-style pattern matching using the `*` wildcard.
+
+### Wildcard Examples
+
+<CodeGroup>
+```yaml Prefix Matching
+restrictedRepos:
+  include:
+    - prod-*      # Matches: prod-api, prod-web, prod-service
+    - api-*       # Matches: api-gateway, api-users, api-payments
+```
+
+```yaml Suffix Matching
+restrictedRepos:
+  exclude:
+    - "*-test"    # Matches: api-test, web-test, service-test
+    - "*-archive" # Matches: old-archive, 2023-archive
+```
+
+```yaml Middle Matching
+restrictedRepos:
+  include:
+    - "*-prod-*"  # Matches: api-prod-v1, service-prod-us-east
+```
+
+```yaml Match Everything
+restrictedRepos:
+  include:
+    - "*"         # Matches all repositories
+  exclude:
+    - admin       # Except admin
+```
+</CodeGroup>
+
+### Pattern Matching Rules
+
+- `*` matches any characters (including none)
+- Patterns are case-sensitive
+- Exact names take precedence over patterns
+- Quote patterns that start with special characters
+
+## Include vs Exclude Logic
+
+### Include Only
+
+When only `include` is specified, Safe Settings runs **only** on repositories that match the patterns:
+
+```yaml
+restrictedRepos:
+  include:
+    - api-*
+    - web-*
+```
+
+**Result**: Manages `api-gateway`, `api-users`, `web-app`, `web-admin`. Ignores everything else like `mobile-app`, `docs`, `infrastructure`.
+
+### Exclude Only
+
+When only `exclude` is specified, Safe Settings runs on **all** repositories except those matching the patterns:
+
+```yaml
+restrictedRepos:
+  exclude:
+    - admin
+    - "*-archive"
+    - test-*
+```
+
+**Result**: Manages all repos except `admin`, `2023-archive`, `old-archive`, `test-api`, `test-web`, etc.
+
+### Include and Exclude Combined
+
+When both are specified:
+
+1. Repository must match an `include` pattern
+2. Repository must NOT match an `exclude` pattern
+
+In other words: `include` defines the allowlist, then `exclude` removes exceptions from it.
+
+```yaml
+restrictedRepos:
+  include:
+    - api-*        # Include all API repos
+    - web-*        # Include all web repos
+  exclude:
+    - api-legacy   # Except this specific API repo
+    - "*-archive"  # And any archived repos
+```
+
+**Behavior**:
+- `api-gateway` ✅ Managed (matches include, not excluded)
+- `api-legacy` ❌ Ignored (matches include but also excluded)
+- `api-users-archive` ❌ Ignored (matches include but also excluded by pattern)
+- `web-app` ✅ Managed (matches include, not excluded)
+- `mobile-app` ❌ Ignored (doesn't match include)
+
+## Complete Examples
+
+### Example 1: Manage Only Production Services
+
+```yaml deployment-settings.yml
+restrictedRepos:
+  include:
+    - prod-*
+    - core-*
+  exclude:
+    - "*-deprecated"
+```
+
+**Manages**:
+- `prod-api`
+- `prod-web`
+- `core-auth`
+- `core-database`
+
+**Ignores**:
+- `dev-api`
+- `staging-web`
+- `prod-legacy-deprecated`
+- `test-anything`
+
+### Example 2: Exclude Test and Archive Repos
+
+```yaml deployment-settings.yml
+restrictedRepos:
+  exclude:
+    - admin
+    - .github
+    - safe-settings
+    - test-*
+    - "*-test"
+    - "*-archive"
+    - "*-deprecated"
+```
+
+**Result**: Manages all repositories except those matching the patterns above.
+
+### Example 3: Team-Based Repository Groups
+
+```yaml deployment-settings.yml
+restrictedRepos:
+  include:
+    - frontend-*
+    - backend-*
+    - shared-*
+  exclude:
+    - "*-example"
+    - "*-template"
+```
+
+**Manages**:
+- `frontend-web`
+- `frontend-mobile`
+- `backend-api`
+- `backend-workers`
+- `shared-utils`
+
+**Ignores**:
+- `frontend-example` (excluded)
+- `devops-tools` (doesn't match include)
+- `shared-template` (excluded)
+
+### Example 4: Protect Critical Infrastructure
+
+```yaml deployment-settings.yml
+restrictedRepos:
+  exclude:
+    - admin
+    - .github
+    - safe-settings
+    - terraform-*
+    - kubernetes-*
+    - ansible-*
+    - "*-infrastructure"
+```
+
+**Result**: Manages application repositories but leaves infrastructure-as-code repositories for manual management.
+
+## Integration with Settings
+
+Restricted repos work at the repository level, before any settings are applied.
+
+### Flow
+
+1. Event received (push, repo created, etc.)
+2. Safe Settings checks if repository matches restrictions
+3. If restricted: Stop processing, no changes made
+4. If not restricted: Load and apply org/suborg/repo settings
+
+### Per-Repository Override
+
+You cannot override `restrictedRepos` on a per-repository basis. The restriction is a deployment-level setting that applies globally.
+
+To make exceptions:
+- Use more specific patterns
+- Adjust include/exclude rules
+
+## Use Cases
+
+### Progressive Rollout
+
+Start with a small set of repositories, then expand:
+
+<CodeGroup>
+```yaml Phase 1: Pilot
+restrictedRepos:
+  include:
+    - pilot-api
+    - pilot-web
+```
+
+```yaml Phase 2: Team Expansion
+restrictedRepos:
+  include:
+    - pilot-*
+    - team-alpha-*
+    - team-beta-*
+```
+
+```yaml Phase 3: Full Rollout
+restrictedRepos:
+  exclude:
+    - admin
+    - .github
+    - safe-settings
+    - legacy-*
+```
+</CodeGroup>
+
+### Multi-Environment Management
+
+Manage different environments separately:
+
+```yaml deployment-settings.yml (Production Safe Settings)
+restrictedRepos:
+  include:
+    - prod-*
+  exclude:
+    - prod-legacy-*
+```
+
+```yaml deployment-settings.yml (Staging Safe Settings)
+restrictedRepos:
+  include:
+    - staging-*
+    - dev-*
+```
+
+### Organization Divisions
+
+Manage repositories by business unit or division:
+
+```yaml deployment-settings.yml (Division A Safe Settings)
+restrictedRepos:
+  include:
+    - diva-*
+  exclude:
+    - "*-archived"
+```
+
+```yaml deployment-settings.yml (Division B Safe Settings)
+restrictedRepos:
+  include:
+    - divb-*
+  exclude:
+    - "*-archived"
+```
+
+## Best Practices
+
+### Use Consistent Naming
+
+Adopt repository naming conventions that work with patterns:
+
+```yaml
+Good naming (pattern-friendly):
+  - api-gateway
+  - api-users
+  - api-payments
+  - web-admin
+  - web-customer
+
+Inconsistent naming:
+  - gateway-api
+  - UsersAPI
+  - payments_api
+  - AdminWeb
+  - customer-web-app
+```
+
+### Document Your Patterns
+
+Add comments explaining your restriction strategy:
+
+```yaml deployment-settings.yml
+# Manage all application repositories
+# Exclude infrastructure, admin, and archived repos
+restrictedRepos:
+  exclude:
+    # Admin and config repos
+    - admin
+    - .github
+    - safe-settings
+    
+    # Infrastructure as code (managed separately)
+    - terraform-*
+    - kubernetes-*
+    
+    # Archived projects
+    - "*-archive"
+    - "*-deprecated"
+    
+    # Test and example repos
+    - test-*
+    - "*-example"
+```
+
+### Test Pattern Changes
+
+Before deploying restriction changes:
+
+1. List your repositories
+2. Test patterns against the list
+3. Verify included/excluded repos are correct
+
+```bash
+# List all org repos
+gh repo list your-org --limit 1000 --json name -q '.[].name'
+
+# Test pattern matching
+gh repo list your-org --limit 1000 --json name -q '.[].name' | grep '^api-'
+```
+
+### Start Restrictive, Then Open Up
+
+It's safer to start with a narrow `include` list and expand:
+
+```yaml
+# Start here
+restrictedRepos:
+  include:
+    - pilot-repo-1
+    - pilot-repo-2
+
+# Then expand
+restrictedRepos:
+  include:
+    - pilot-*
+    - prod-api-*
+
+# Finally, full deployment
+restrictedRepos:
+  exclude:
+    - admin
+    - .github
+    - safe-settings
+```
+
+### Exclude Dangerous Patterns
+
+Always exclude repositories that could break your setup:
+
+```yaml
+restrictedRepos:
+  exclude:
+    - admin          # Your settings repository
+    - .github        # Organization .github repo
+    - safe-settings  # The app's own repo
+```
+
+## Troubleshooting
+
+### Repository Not Being Managed
+
+**Problem**: Repository should be managed but Safe Settings ignores it.
+
+**Debug steps**:
+
+1. Check if repo name matches `include` patterns
+2. Verify repo name doesn't match `exclude` patterns
+3. Check for typos in pattern matching
+4. Review logs for restriction messages
+
+```bash
+# Check Safe Settings logs
+docker logs safe-settings | grep "restricted"
+```
+
+### Repository Being Managed When It Shouldn't
+
+**Problem**: Repository is being modified but should be restricted.
+
+**Debug steps**:
+
+1. Verify `deployment-settings.yml` is in correct location
+2. Check YAML syntax (proper indentation)
+3. Verify patterns are correctly formatted
+4. Check if there's a more specific include pattern
+
+### Pattern Not Matching
+
+**Problem**: Pattern seems correct but doesn't match expected repos.
+
+**Common issues**:
+
+```yaml
+# Wrong: Case mismatch
+include:
+  - API-*           # Won't match api-gateway
+
+# Wrong: Missing wildcard
+include:
+  - test           # Only matches "test", not "test-api"
+
+# Correct
+include:
+  - api-*          # Matches api-gateway, api-users
+  - test-*         # Matches test-api, test-web
+```
+
+### Deployment Settings Not Loading
+
+**Problem**: Changes to `deployment-settings.yml` don't take effect.
+
+**Solutions**:
+
+1. Restart Safe Settings application
+2. Verify file location (same directory as running app)
+3. Check file permissions (readable by Safe Settings)
+4. Validate YAML syntax
+
+```bash
+# Validate YAML
+yamllint deployment-settings.yml
+
+# Check file location
+ls -la deployment-settings.yml
+```
+
+## Environment Variables
+
+You can customize the deployment settings file location:
+
+```bash
+# Default
+DEPLOYMENT_CONFIG_FILE=deployment-settings.yml
+
+# Custom location
+DEPLOYMENT_CONFIG_FILE=/config/custom-deployment.yml
+```
+
+## Advanced Patterns
+
+### Multiple Wildcard Matching
+
+```yaml
+restrictedRepos:
+  include:
+    - "*-prod-*"       # service-prod-api, web-prod-admin
+    - "*-staging-*"    # service-staging-api
+```
+
+### Complex Boolean Logic
+
+```yaml
+# Include all api and web repos
+# Except those that are archived or deprecated
+# And specifically exclude api-legacy even if not archived
+restrictedRepos:
+  include:
+    - api-*
+    - web-*
+  exclude:
+    - api-legacy
+    - "*-archive"
+    - "*-deprecated"
+```
+
+### Temporary Exclusions
+
+```yaml
+restrictedRepos:
+  exclude:
+    - admin
+    - .github
+    - safe-settings
+    # Temporary: Migration in progress
+    - legacy-monolith  # TODO: Remove after migration (2024-Q2)
+```
+
+## Validation
+
+Test your restricted repos configuration:
+
+```bash
+# Create test PR in admin repo
+# Safe Settings will show which repos would be affected
+# Check PR comment for list of targeted repositories
+```
+
+The dry-run output will indicate which repositories are included/excluded.
+
+## Related Configuration
+
+Restricted repos work alongside:
+
+- [Custom Validators](/advanced/custom-validators) - Additional validation logic
+- [Suborg Configuration](/configuration/hierarchy) - Repository grouping
+- [Per-Repository Settings](/configuration/repo-settings) - Individual repo config
+
+## Migration Example
+
+Moving from no restrictions to managed restrictions:
+
+<CodeGroup>
+```yaml Step 1: Current State (No file)
+# Default: admin, .github, safe-settings excluded
+# All other repos managed
+```
+
+```yaml Step 2: Document Current Behavior
+# deployment-settings.yml
+restrictedRepos:
+  exclude:
+    - admin
+    - .github
+    - safe-settings
+```
+
+```yaml Step 3: Add Temporary Exclusions
+restrictedRepos:
+  exclude:
+    - admin
+    - .github
+    - safe-settings
+    # Repos to migrate later
+    - legacy-*
+    - old-*
+```
+
+```yaml Step 4: Switch to Include Pattern
+restrictedRepos:
+  include:
+    - api-*
+    - web-*
+    - service-*
+  exclude:
+    - "*-archive"
+```
+</CodeGroup>

@@ -1,0 +1,383 @@
+---
+title: Create GitHub App
+description: Step-by-step guide to creating and configuring a GitHub App for Safe Settings
+---
+
+Safe Settings requires a GitHub App to authenticate and manage repository settings across your organization. This guide walks you through creating and configuring the app.
+
+## Creation Methods
+
+There are two ways to create a GitHub App for Safe Settings:
+
+1. **Manifest Flow** (Recommended) - Automated setup using Probot
+2. **Manual Creation** - Manual configuration in GitHub settings
+
+## Method 1: Manifest Flow (Recommended)
+
+The easiest way to create the GitHub App is using the manifest flow, which automatically configures all required permissions.
+
+<Steps>
+
+### Prepare the Source Code
+
+Clone and set up the Safe Settings repository:
+
+```bash
+git clone https://github.com/github/safe-settings.git
+cd safe-settings/
+npm install
+```
+
+### Configure Environment
+
+Create `.env` file from the example:
+
+```bash
+cp .env.example .env
+```
+
+Set the organization variable:
+
+```bash
+# .env
+GH_ORG=your-organization-name
+```
+
+<Note>
+If you're installing the app in a personal account instead of an organization, leave `GH_ORG` empty.
+</Note>
+
+### Start the Application
+
+Start Safe Settings locally:
+
+```bash
+npm run dev
+```
+
+The app will start on port 3000.
+
+### Create the App via Manifest
+
+1. Open your browser to: `http://localhost:3000/probot`
+2. Click the link to create a GitHub App
+3. Follow the GitHub prompts to complete the creation
+4. Download the private key when prompted
+
+### Update Environment
+
+After creation, GitHub will provide:
+- App ID
+- Webhook Secret
+- Private Key (downloaded file)
+
+Update your `.env` file:
+
+```bash
+APP_ID=123456
+WEBHOOK_SECRET=your-webhook-secret
+PRIVATE_KEY="$(cat ~/Downloads/*.private-key.pem | base64)"
+```
+
+### Install the App
+
+Install the GitHub App in your organization:
+
+<Warning>
+You **must** install the app for **all repositories** in your organization for Safe Settings to work correctly.
+</Warning>
+
+</Steps>
+
+## Method 2: Manual Creation
+
+If you prefer manual configuration or can't use the manifest flow:
+
+<Steps>
+
+### Navigate to GitHub App Settings
+
+Go to your GitHub account or organization settings:
+- Personal: `https://github.com/settings/apps/new`
+- Organization: `https://github.com/organizations/YOUR-ORG/settings/apps/new`
+
+### Configure Basic Information
+
+Fill in the basic app details:
+
+| Field | Value |
+|-------|-------|
+| **GitHub App name** | safe-settings (or your preferred name) |
+| **Homepage URL** | `https://github.com/github/safe-settings` |
+| **Webhook URL** | Your deployment URL + `/api/github/webhooks` |
+| **Webhook Secret** | Generate with: `openssl rand -base64 32` |
+
+<Note>
+For the webhook URL, use your deployment endpoint. For AWS Lambda, this will be your Function URL. For Docker, it might be `https://your-domain.com/api/github/webhooks`.
+</Note>
+
+### Set Repository Permissions
+
+Configure the following repository permissions:
+
+| Permission | Access Level |
+|------------|-------------|
+| Actions | Read-only |
+| Administration | Read & Write |
+| Checks | Read & Write |
+| Commit statuses | Read & Write |
+| Contents | Read & Write |
+| Custom properties | Read & Write |
+| Environments | Read & Write |
+| Issues | Read & Write |
+| Metadata | Read-only |
+| Pull requests | Read & Write |
+| Variables | Read & Write |
+
+### Set Organization Permissions
+
+Configure the following organization permissions:
+
+| Permission | Access Level |
+|------------|-------------|
+| Administration | Read & Write |
+| Custom properties | Admin |
+| Members | Read & Write |
+
+### Subscribe to Events
+
+Enable the following webhook events:
+
+- Branch protection rule
+- Check run
+- Check suite
+- Create
+- Custom property values
+- Member
+- Pull request
+- Push
+- Repository
+- Repository ruleset
+- Team
+
+### Create the App
+
+Click **Create GitHub App** to finalize the creation.
+
+### Generate Private Key
+
+After creation:
+1. Scroll down to **Private keys**
+2. Click **Generate a private key**
+3. Save the downloaded `.pem` file securely
+
+### Install the App
+
+Click the **Install App** button and select:
+- **All repositories** (required)
+- Your organization or account
+
+</Steps>
+
+## Permissions Reference
+
+Here's the complete permissions configuration needed for Safe Settings:
+
+### Repository Permissions
+
+```yaml
+Actions: Read-only
+Administration: Read & Write
+Checks: Read & Write
+Commit statuses: Read & Write
+Contents: Read & Write
+Custom properties: Read & Write
+Environments: Read & Write
+Issues: Read & Write
+Metadata: Read-only
+Pull requests: Read & Write
+Variables: Read & Write
+```
+
+### Organization Permissions
+
+```yaml
+Administration: Read & Write
+Custom properties: Admin
+Members: Read & Write
+```
+
+### Webhook Events
+
+```yaml
+- Branch protection rule
+- Check run
+- Check suite
+- Create
+- Custom property values
+- Member
+- Pull request
+- Push
+- Repository
+- Repository ruleset
+- Team
+```
+
+## Webhook Configuration
+
+The webhook URL format depends on your deployment method:
+
+<CodeGroup>
+
+```bash Docker
+https://your-domain.com/api/github/webhooks
+```
+
+```bash AWS Lambda
+https://your-function-url.lambda-url.us-east-1.on.aws/api/github/webhooks
+```
+
+```bash Kubernetes
+https://safe-settings.your-cluster.com/api/github/webhooks
+```
+
+```bash Local (SMEE)
+https://smee.io/your-channel
+```
+
+</CodeGroup>
+
+<Note>
+For local development, use [SMEE.io](https://smee.io) to proxy webhooks to your local machine.
+</Note>
+
+## Testing the App
+
+After creating and installing the app:
+
+### Verify Installation
+
+Check that the app is installed:
+
+```bash
+# View installed apps
+gh api /orgs/YOUR-ORG/installations
+```
+
+### Test Webhook Delivery
+
+1. Go to your GitHub App settings
+2. Navigate to **Advanced** tab
+3. Check **Recent Deliveries**
+4. Verify webhooks are being received
+
+### Create Test Repository
+
+Create a test repository to trigger the app:
+
+```bash
+gh repo create your-org/test-repo --private
+```
+
+Check the Safe Settings logs to verify it processed the event.
+
+## Environment Variables
+
+After creating the GitHub App, you'll have these credentials:
+
+```bash
+# Required
+APP_ID=123456
+WEBHOOK_SECRET=your-generated-webhook-secret
+PRIVATE_KEY="$(cat private-key.pem | base64)"
+
+# Or use file path
+PRIVATE_KEY_PATH=/path/to/private-key.pem
+```
+
+<Warning>
+Keep your private key and webhook secret secure. Never commit them to version control.
+</Warning>
+
+## Base64 Encoding Private Key
+
+For containerized deployments, encode the private key:
+
+<CodeGroup>
+
+```bash macOS/Linux
+cat private-key.pem | base64
+```
+
+```bash Windows (PowerShell)
+[Convert]::ToBase64String([System.IO.File]::ReadAllBytes("private-key.pem"))
+```
+
+```bash Windows (Git Bash)
+cat private-key.pem | base64 -w 0
+```
+
+</CodeGroup>
+
+## Updating Webhook URL
+
+If you need to update the webhook URL after deployment:
+
+### Via GitHub UI
+
+1. Go to GitHub App settings
+2. Update **Webhook URL**
+3. Save changes
+
+### Via GitHub CLI
+
+```bash
+gh api --method PATCH /app \
+  -f webhook_url='https://new-url.com/api/github/webhooks'
+```
+
+## Troubleshooting
+
+### Webhook Not Receiving Events
+
+- Verify webhook URL is correct and accessible
+- Check **Recent Deliveries** in app settings for errors
+- Ensure firewall allows GitHub webhook IPs
+- Verify `WEBHOOK_SECRET` matches in both GitHub and your deployment
+
+### Authentication Errors
+
+- Verify `APP_ID` is correct
+- Ensure private key is properly formatted
+- Check that private key matches the app
+- Verify app is installed in the organization
+
+### Permission Errors
+
+- Verify all required permissions are granted
+- Check that app is installed for all repositories
+- Ensure organization permissions are granted (not just repository)
+
+## Next Steps
+
+With your GitHub App created, choose a deployment method:
+
+<CardGroup cols={2}>
+
+<Card title="Docker" icon="docker" href="/deployment/docker">
+  Deploy with Docker containers
+</Card>
+
+<Card title="AWS Lambda" icon="aws" href="/deployment/aws-lambda">
+  Deploy to AWS Lambda
+</Card>
+
+<Card title="Kubernetes" icon="dharmachakra" href="/deployment/kubernetes">
+  Deploy to Kubernetes
+</Card>
+
+<Card title="GitHub Actions" icon="github" href="/deployment/github-actions">
+  Run with GitHub Actions
+</Card>
+
+</CardGroup>

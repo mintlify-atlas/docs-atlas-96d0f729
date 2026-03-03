@@ -1,0 +1,165 @@
+---
+title: Collaborators
+description: Grant individual users access to repositories with specific permissions
+---
+
+The `collaborators` section grants individual users access to repositories with specific permissions. This is useful for giving access to external contributors or individuals who are not part of a team.
+
+## Basic Configuration
+
+<ParamField path="username" type="string" required>
+  The GitHub username of the collaborator. Usernames are automatically converted to lowercase to avoid comparison issues.
+  
+  ```yaml
+  collaborators:
+    - username: octocat
+      permission: push
+  ```
+</ParamField>
+
+<ParamField path="permission" type="string" required>
+  The permission to grant the collaborator. Can be one of:
+  - `pull` - Can pull, but not push to or administer this repository
+  - `push` - Can pull and push, but not administer this repository
+  - `admin` - Can pull, push and administer this repository
+  
+  ```yaml
+  collaborators:
+    - username: external-contributor
+      permission: pull
+  ```
+</ParamField>
+
+## Include/Exclude Patterns
+
+You can use `include` and `exclude` lists to control which repositories a collaborator has access to. This is particularly useful for organization-level settings.
+
+<ParamField path="include" type="array">
+  List of repository names where this collaborator should have access. When specified, the collaborator will **only** have access to these repositories.
+  
+  ```yaml
+  collaborators:
+    - username: contractor-alice
+      permission: push
+      include:
+        - project-alpha
+        - project-beta
+  ```
+</ParamField>
+
+<ParamField path="exclude" type="array">
+  List of repository names where this collaborator should **not** have access. The collaborator will have access to all other repositories in the organization.
+  
+  ```yaml
+  collaborators:
+    - username: temporary-access
+      permission: pull
+      exclude:
+        - sensitive-repo
+        - internal-tools
+  ```
+</ParamField>
+
+## Pending Invitations
+
+Safe Settings handles both active collaborators and pending invitations:
+
+- **Active collaborators**: Users who have accepted their invitation
+- **Pending invitations**: Users who have been invited but haven't accepted yet
+
+If a collaborator's permission changes while their invitation is pending, Safe Settings will update the invitation with the new permission level.
+
+## Complete Examples
+
+### Basic Collaborator Access
+
+```yaml
+collaborators:
+  - username: octocat
+    permission: push
+  
+  - username: external-reviewer
+    permission: pull
+  
+  - username: repo-admin
+    permission: admin
+```
+
+### Organization-Level with Include
+
+```yaml
+# In org-level settings
+collaborators:
+  - username: contractor-bob
+    permission: push
+    include:
+      - frontend-project
+      - design-assets
+```
+
+### Organization-Level with Exclude
+
+```yaml
+# In org-level settings
+collaborators:
+  - username: external-auditor
+    permission: pull
+    exclude:
+      - private-configs
+      - security-repo
+```
+
+### Mixed Patterns
+
+```yaml
+collaborators:
+  # Access to all repos (repo-level settings)
+  - username: trusted-contributor
+    permission: push
+  
+  # Limited to specific repos (org-level settings)
+  - username: specialist
+    permission: push
+    include:
+      - data-pipeline
+  
+  # Access to all except specific repos (org-level settings)
+  - username: temporary-help
+    permission: pull
+    exclude:
+      - production-config
+```
+
+## How Include/Exclude Works
+
+- **Include**: When specified, creates an allowlist. The collaborator will **only** have access to repositories in the include list.
+- **Exclude**: When specified, creates a denylist. The collaborator will have access to **all repositories except** those in the exclude list.
+- **Neither**: When neither is specified, the collaborator configuration applies to the current repository (repo-level settings) or all repositories (org-level settings).
+- **Both**: You should not specify both `include` and `exclude` for the same collaborator.
+
+## Collaborators vs Teams
+
+Use collaborators when:
+- Granting access to external contributors
+- Giving access to individuals not in your organization
+- Providing temporary or limited access
+
+Use teams when:
+- Managing access for groups of organization members
+- Applying consistent permissions across multiple people
+- Organizing people by project or responsibility
+
+## Finding User IDs
+
+To find a user ID (needed for environment reviewers), use:
+
+```bash
+gh api /users/<username> | jq .id
+```
+
+## API Reference
+
+For more details, see GitHub's REST API documentation:
+- [Add a repository collaborator](https://docs.github.com/en/rest/collaborators/collaborators#add-a-repository-collaborator)
+- [Update a repository invitation](https://docs.github.com/en/rest/collaborators/invitations#update-a-repository-invitation)
+- [Remove a repository collaborator](https://docs.github.com/en/rest/collaborators/collaborators#remove-a-repository-collaborator)

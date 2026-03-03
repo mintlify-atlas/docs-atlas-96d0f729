@@ -1,80 +1,432 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick Start Guide
+description: Deploy Safe Settings and start managing your GitHub organization's policies as code in under 10 minutes.
 ---
 
-## Get started in three steps
+# Quick start
 
-Get your documentation site running locally and make your first customization.
+This guide will help you deploy Safe Settings and configure your first repository policies in under 10 minutes.
 
-### Step 1: Set up your local environment
+## Prerequisites
+
+Before you begin, ensure you have:
+
+- **Organization admin access**: Required to create and install GitHub Apps
+- **Admin repository**: You'll create this during setup (default name: `admin`)
+- **Deployment environment**: Choose from Docker, AWS Lambda, Kubernetes, or Heroku
+
+<Steps>
+
+### Create a GitHub App
+
+Safe Settings runs as a GitHub App that responds to webhook events in your organization.
+
+#### Option 1: Manifest flow (recommended)
+
+<Note>
+The manifest flow is the easiest way to create and configure your GitHub App automatically.
+</Note>
+
+1. Clone the Safe Settings repository:
+   ```bash
+   git clone https://github.com/github/safe-settings.git
+   cd safe-settings
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Create environment configuration:
+   ```bash
+   cp .env.example .env
+   ```
+
+4. (Optional) Set your organization in `.env`:
+   ```bash
+   GH_ORG=your-org-name
+   ```
+
+5. Start the development server:
+   ```bash
+   npm run dev
+   ```
+
+6. Visit `http://localhost:3000` and follow the prompts to create your GitHub App
+
+7. The app will automatically configure permissions and webhook events
+
+#### Option 2: Manual setup
+
+If you prefer to create the GitHub App manually:
+
+1. Navigate to [GitHub App settings](https://github.com/settings/apps/new)
+
+2. Configure basic information:
+   - **GitHub App name**: `safe-settings` (or your preferred name)
+   - **Homepage URL**: Your repository or documentation URL
+   - **Webhook URL**: `https://your-domain.com/api/github/webhooks`
+   - **Webhook secret**: Generate with `openssl rand -base64 32`
+
+3. Set **Repository permissions**:
+   - Actions: **Read-only**
+   - Administration: **Read & Write**
+   - Checks: **Read & Write**
+   - Commit statuses: **Read & Write**
+   - Contents: **Read & Write**
+   - Custom properties: **Read & Write**
+   - Environments: **Read & Write**
+   - Issues: **Read & Write**
+   - Metadata: **Read-only**
+   - Pull requests: **Read & Write**
+   - Variables: **Read & Write**
+
+4. Set **Organization permissions**:
+   - Administration: **Read & Write**
+   - Custom properties: **Admin**
+   - Members: **Read & Write**
+
+5. Subscribe to **webhook events**:
+   - Branch protection rule
+   - Check run
+   - Check suite
+   - Create
+   - Custom property values
+   - Member
+   - Pull request
+   - Push
+   - Repository
+   - Repository ruleset
+   - Team
+
+6. Click **Create GitHub App**
+
+7. Download the private key file
+
+8. Install the app on your organization (click the **Install** button)
+
+<Warning>
+When installing the app, select **All repositories** to allow Safe Settings to manage all repos in your organization.
+</Warning>
+
+### Configure deployment environment
+
+Safe Settings requires three environment variables to authenticate with GitHub:
+
+```bash
+# .env file
+APP_ID=123456
+WEBHOOK_SECRET=your-webhook-secret-from-step-1
+PRIVATE_KEY="$(cat path/to/private-key.pem)"
+# Or use PRIVATE_KEY_PATH instead:
+# PRIVATE_KEY_PATH=/path/to/private-key.pem
+```
+
+<Info>
+`PRIVATE_KEY` takes precedence over `PRIVATE_KEY_PATH`. For production, base64-encode the private key and use `PRIVATE_KEY`.
+</Info>
+
+#### Optional environment variables
+
+```bash
+# Admin repository name (default: admin)
+ADMIN_REPO=admin
+
+# Configuration path within admin repo (default: .github)
+CONFIG_PATH=.github
+
+# Settings file name (default: settings.yml)
+SETTINGS_FILE_PATH=settings.yml
+
+# Scheduled sync (cron syntax)
+CRON="0 * * * *"  # Run every hour
+
+# Logging level
+LOG_LEVEL=info  # trace, debug, info, warn, error
+
+# Pull request comments (default: true)
+ENABLE_PR_COMMENT=true
+
+# Block manual repo renaming (default: false)
+BLOCK_REPO_RENAME_BY_HUMAN=true
+```
+
+### Deploy Safe Settings
+
+Choose your deployment method:
+
+<Tabs>
+  <Tab title="Docker">
+    ```bash
+    # Build the container
+    docker build -t safe-settings .
+
+    # Run with docker-compose (recommended)
+    docker-compose --env-file .env up -d
+
+    # Or run directly
+    docker run -d -p 3000:3000 --env-file .env safe-settings
+    ```
+  </Tab>
+  
+  <Tab title="AWS Lambda">
+    For production-ready AWS Lambda deployment, use the [SafeSettings-Template](https://github.com/bheemreddy181/SafeSettings-Template):
+
+    1. Click "Use this template" on GitHub
+    2. Configure AWS credentials in GitHub Secrets
+    3. Set environment variables in `serverless.yml`
+    4. Deploy with GitHub Actions
+
+    See the [AWS Lambda deployment guide](/deployment/aws-lambda) for details.
+  </Tab>
+  
+  <Tab title="Local">
+    ```bash
+    # Development mode with auto-reload
+    npm run dev
+
+    # Production mode
+    npm start
+    ```
+
+    <Note>
+    For local development, use [smee.io](https://smee.io) to forward webhooks:
+    ```bash
+    WEBHOOK_PROXY_URL=https://smee.io/your-unique-url
+    ```
+    </Note>
+  </Tab>
+</Tabs>
+
+### Create admin repository
+
+The admin repository stores all your configuration files:
+
+```bash
+# Create a private admin repository
+gh repo create your-org/admin --private
+
+# Clone it locally
+gh repo clone your-org/admin
+cd admin
+```
+
+### Set up configuration structure
+
+Create the following directory structure in your admin repository:
+
+```bash
+mkdir -p .github/repos .github/suborgs
+```
+
+Your admin repository structure should look like:
+
+```
+admin/
+├── .github/
+│   ├── settings.yml          # Organization-wide settings
+│   ├── suborgs/              # Sub-organization configs
+│   │   ├── frontend-team.yml
+│   │   └── backend-team.yml
+│   └── repos/                # Repository-specific configs
+│       ├── api-service.yml
+│       └── web-app.yml
+├── deployment-settings.yml   # Runtime configuration (optional)
+└── README.md
+```
+
+### Create your first configuration
+
+Create `.github/settings.yml` with organization-wide defaults:
+
+```yaml .github/settings.yml
+# Organization-wide repository defaults
+repository:
+  # Make repositories private by default
+  private: true
+  
+  # Enable features
+  has_issues: true
+  has_projects: true
+  has_wiki: false
+  
+  # Default branch
+  default_branch: main
+  
+  # Auto-delete merged branches
+  delete_branch_on_merge: true
+  
+  # Merge strategies
+  allow_squash_merge: true
+  allow_merge_commit: true
+  allow_rebase_merge: true
+
+# Standard labels for all repositories
+labels:
+  - name: bug
+    color: CC0000
+    description: Something isn't working
+  
+  - name: enhancement
+    color: 336699
+    description: New feature or request
+  
+  - name: documentation
+    color: 0075ca
+    description: Improvements or additions to documentation
+
+# Branch protection for default branch
+branches:
+  - name: default
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 1
+        dismiss_stale_reviews: true
+        require_code_owner_reviews: true
+      
+      required_status_checks:
+        strict: true
+        contexts: []
+      
+      enforce_admins: false
+      
+      restrictions: null
+```
+
+<Info>
+Use `name: default` in branch protection to automatically apply rules to each repository's default branch (main, master, etc.).
+</Info>
+
+### (Optional) Configure deployment settings
+
+Create `deployment-settings.yml` in the admin repository root to restrict which repositories Safe Settings manages:
+
+```yaml deployment-settings.yml
+# Restrict Safe Settings to specific repositories
+restrictedRepos:
+  exclude:
+    - admin
+    - .github
+    - safe-settings
+    - test-*
+  include:
+    - prod-*
+    - api-*
+
+# Custom validation rules
+configvalidators:
+  - plugin: collaborators
+    error: "Admin role cannot be assigned to collaborators"
+    script: |
+      console.log(`Validating collaborator: ${JSON.stringify(baseconfig)}`)
+      return baseconfig.permission !== 'admin'
+
+overridevalidators:
+  - plugin: branches
+    error: "Branch protection cannot be weakened"
+    script: |
+      if (baseconfig.protection?.required_pull_request_reviews?.required_approving_review_count && 
+          overrideconfig.protection?.required_pull_request_reviews?.required_approving_review_count) {
+        return overrideconfig.protection.required_pull_request_reviews.required_approving_review_count >= 
+               baseconfig.protection.required_pull_request_reviews.required_approving_review_count
+      }
+      return true
+```
+
+### Commit and push changes
+
+Commit your configuration files:
+
+```bash
+git add .
+git commit -m "feat: initial Safe Settings configuration"
+git push origin main
+```
+
+<Warning>
+Safe Settings only processes changes on the **default branch**. Changes on other branches are validated in dry-run mode.
+</Warning>
+
+### Verify installation
+
+Safe Settings will automatically:
+
+1. **Detect the push event** to the admin repository
+2. **Read configuration files** from `.github/settings.yml`
+3. **Apply settings** to all repositories in your organization
+4. **Create a check run** showing the results
+
+To verify:
+
+1. Navigate to your admin repository on GitHub
+2. Click on the latest commit
+3. Look for the "Safe-Settings" check run
+4. Click "Details" to see what settings were applied
+
+</Steps>
+
+## What's next?
+
+<CardGroup cols={2}>
+  <Card title="Test with a pull request" icon="code-pull-request">
+    Create a PR with configuration changes to see dry-run validation in action
+  </Card>
+  <Card title="Add sub-org configurations" icon="layer-group">
+    Create team-specific settings in `.github/suborgs/`
+  </Card>
+  <Card title="Configure specific repositories" icon="file-code">
+    Override settings for individual repos in `.github/repos/`
+  </Card>
+  <Card title="Set up scheduled sync" icon="clock">
+    Configure `CRON` environment variable for drift prevention
+  </Card>
+</CardGroup>
+
+## Common issues
 
 <AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
+  <Accordion title="Settings aren't being applied">
+    Check:
+    1. GitHub App is installed with "All repositories" access
+    2. Admin repository name matches `ADMIN_REPO` environment variable (default: `admin`)
+    3. Configuration files are in `.github/` directory on the default branch
+    4. Repository is not in the `restrictedRepos` exclude list
+    5. Check the Safe-Settings check run for error details
   </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
+  
+  <Accordion title="Webhook events not received">
+    Check:
+    1. Webhook URL is correct in GitHub App settings
+    2. Webhook secret matches `WEBHOOK_SECRET` environment variable
+    3. Safe Settings is running and accessible at the webhook URL
+    4. Recent deliveries tab in GitHub App settings shows successful deliveries
+  </Accordion>
+  
+  <Accordion title="Private key authentication failed">
+    Check:
+    1. `APP_ID` matches your GitHub App's ID
+    2. Private key is correctly formatted (include BEGIN/END lines)
+    3. `PRIVATE_KEY` or `PRIVATE_KEY_PATH` is set correctly
+    4. For `PRIVATE_KEY`, ensure newlines are preserved or base64-encoded
+  </Accordion>
+  
+  <Accordion title="Branch protection not applying">
+    Remember:
+    1. Use `name: default` to apply to the default branch
+    2. All required fields must be present (don't omit any protection keys)
+    3. Set unwanted protections to `null` explicitly
+    4. Status check contexts must exist before adding them
   </Accordion>
 </AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="How It Works" icon="gears" href="/how-it-works">
+    Learn about the architecture, webhook events, and configuration merging
+  </Card>
+  <Card title="Configuration Reference" icon="book" href="/configuration/overview">
+    Explore all available settings and configuration options
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

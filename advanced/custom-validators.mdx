@@ -1,0 +1,457 @@
+---
+title: Custom Validators
+description: Create custom validation rules to enforce organization-specific policies and constraints in Safe Settings
+---
+
+Custom validators allow administrators to enforce organization-specific policies beyond GitHub's built-in constraints. You can validate individual settings or prevent inappropriate overrides at different configuration levels.
+
+## Types of Validators
+
+Safe Settings supports two types of custom validators:
+
+### Config Validators
+
+Validate a setting on its own, regardless of inheritance or overrides. These ensure that settings meet your organization's requirements at any level.
+
+**Use case:** Prevent collaborators from being assigned admin permissions
+
+### Override Validators
+
+Validate settings when a lower-level configuration (suborg or repo) attempts to override a higher-level setting (org or suborg). These maintain minimum security standards across your organization.
+
+**Use case:** Ensure branch protection requirements can only be made more restrictive, never less
+
+## Configuration Location
+
+Custom validators are configured in `deployment-settings.yml` in the directory where Safe Settings runs. This file is separate from your repository settings and controls the application's behavior.
+
+## Config Validators
+
+Config validators check individual settings to ensure they meet your policies.
+
+### Structure
+
+```yaml
+configvalidators:
+  - plugin: <setting-name>
+    error: |
+      Error message displayed when validation fails
+    script: |
+      JavaScript code that returns true (valid) or false (invalid)
+```
+
+### Available Variables
+
+- `baseconfig` - The complete setting being validated
+- `console.log()` - Available for debugging (outputs to application logs)
+
+### Example: Prevent Admin Collaborators
+
+<CodeGroup>
+```yaml deployment-settings.yml
+configvalidators:
+  - plugin: collaborators
+    error: |
+      `Admin role cannot be assigned to collaborators`
+    script: |
+      console.log(`baseConfig ${JSON.stringify(baseconfig)}`)
+      return baseconfig.permission != 'admin'
+```
+
+```yaml settings.yml (Valid)
+collaborators:
+  - username: external-developer
+    permission: push
+  - username: contractor
+    permission: pull
+```
+
+```yaml settings.yml (Invalid)
+collaborators:
+  - username: external-developer
+    permission: admin  # Validation fails
+```
+</CodeGroup>
+
+### Example: Enforce Label Naming Convention
+
+```yaml deployment-settings.yml
+configvalidators:
+  - plugin: labels
+    error: |
+      `Labels must follow naming convention: category/name`
+    script: |
+      if (!baseconfig.name) return true
+      const pattern = /^[a-z]+\/[a-z-]+$/
+      return pattern.test(baseconfig.name)
+```
+
+### Example: Require Specific Team Permissions
+
+```yaml deployment-settings.yml
+configvalidators:
+  - plugin: teams
+    error: |
+      `Security team must have admin permission on all repos`
+    script: |
+      if (baseconfig.name === 'security-team') {
+        return baseconfig.permission === 'admin'
+      }
+      return true
+```
+
+## Override Validators
+
+Override validators ensure that settings can only be overridden in specific ways, maintaining minimum standards.
+
+### Structure
+
+```yaml
+overridevalidators:
+  - plugin: <setting-name>
+    error: |
+      Error message displayed when validation fails
+    script: |
+      JavaScript code that returns true (valid) or false (invalid)
+```
+
+### Available Variables
+
+- `baseconfig` - The higher-level setting (org or suborg)
+- `overrideconfig` - The lower-level setting attempting to override (suborg or repo)
+- `console.log()` - Available for debugging
+
+### Example: Maintain Minimum Approvals
+
+Prevent repos from reducing the required number of approvals below the org-level setting.
+
+<CodeGroup>
+```yaml deployment-settings.yml
+overridevalidators:
+  - plugin: branches
+    error: |
+      `Branch protection required_approving_review_count cannot be overridden to a lower value`
+    script: |
+      console.log(`baseConfig ${JSON.stringify(baseconfig)}`)
+      console.log(`overrideConfig ${JSON.stringify(overrideconfig)}`)
+      if (baseconfig.protection.required_pull_request_reviews.required_approving_review_count && 
+          overrideconfig.protection.required_pull_request_reviews.required_approving_review_count) {
+        return overrideconfig.protection.required_pull_request_reviews.required_approving_review_count >= 
+               baseconfig.protection.required_pull_request_reviews.required_approving_review_count
+      }
+      return true
+```
+
+```yaml .github/settings.yml (Org level)
+branches:
+  - name: main
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 2
+```
+
+```yaml .github/repos/api-service.yml (Valid override)
+branches:
+  - name: main
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 3  # More restrictive - allowed
+```
+
+```yaml .github/repos/docs-site.yml (Invalid override)
+branches:
+  - name: main
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 1  # Less restrictive - blocked
+```
+</CodeGroup>
+
+### Example: Enforce Status Check Requirements
+
+```yaml deployment-settings.yml
+overridevalidators:
+  - plugin: branches
+    error: |
+      `Status checks cannot be disabled if enabled at org level`
+    script: |
+      if (baseconfig.protection.required_status_checks && 
+          baseconfig.protection.required_status_checks.strict) {
+        if (!overrideconfig.protection.required_status_checks) {
+          return false
+        }
+        return overrideconfig.protection.required_status_checks.strict === true
+      }
+      return true
+```
+
+### Example: Maintain Enforce Admins Setting
+
+```yaml deployment-settings.yml
+overridevalidators:
+  - plugin: branches
+    error: |
+      `enforce_admins cannot be disabled when enabled at org level`
+    script: |
+      if (baseconfig.protection.enforce_admins === true) {
+        return overrideconfig.protection.enforce_admins !== false
+      }
+      return true
+```
+
+## Complete Example
+
+<CodeGroup>
+```yaml deployment-settings.yml
+restrictedRepos:
+  exclude:
+    - admin
+    - .github
+    - safe-settings
+
+configvalidators:
+  - plugin: collaborators
+    error: |
+      `Admin role cannot be assigned to collaborators`
+    script: |
+      console.log(`baseConfig ${JSON.stringify(baseconfig)}`)
+      return baseconfig.permission != 'admin'
+  
+  - plugin: labels
+    error: |
+      `Labels must include a color`
+    script: |
+      return baseconfig.color !== undefined && baseconfig.color !== ''
+
+overridevalidators:
+  - plugin: branches
+    error: |
+      `Branch protection required_approving_review_count cannot be overridden to a lower value`
+    script: |
+      console.log(`baseConfig ${JSON.stringify(baseconfig)}`)
+      console.log(`overrideConfig ${JSON.stringify(overrideconfig)}`)
+      if (baseconfig.protection.required_pull_request_reviews.required_approving_review_count && 
+          overrideconfig.protection.required_pull_request_reviews.required_approving_review_count) {
+        return overrideconfig.protection.required_pull_request_reviews.required_approving_review_count >= 
+               baseconfig.protection.required_pull_request_reviews.required_approving_review_count
+      }
+      return true
+  
+  - plugin: branches
+    error: |
+      `Code owner reviews cannot be disabled if enabled at org level`
+    script: |
+      if (baseconfig.protection.required_pull_request_reviews.require_code_owner_reviews === true) {
+        return overrideconfig.protection.required_pull_request_reviews.require_code_owner_reviews !== false
+      }
+      return true
+```
+</CodeGroup>
+
+## Validation Behavior
+
+### When Validators Run
+
+- **Pull Request Checks**: Validators run in dry-run mode when settings changes are proposed
+- **Settings Application**: Validators run when applying settings to repositories
+- **Merge Operations**: During configuration merging across org, suborg, and repo levels
+
+### Validation Failure
+
+When a validator fails:
+
+1. **In PR checks**: The check fails with the error message, preventing merge
+2. **During sync**: An error is logged and the operation stops
+3. **Error details**: The custom error message is shown in logs and check runs
+
+### Check Run Example
+
+When validation fails in a pull request:
+
+```
+❌ safe-settings check failed
+
+Error in validation:
+  Plugin: branches
+  Error: Branch protection required_approving_review_count cannot be 
+         overridden to a lower value
+  
+  Base config: {"required_approving_review_count": 2}
+  Override config: {"required_approving_review_count": 1}
+```
+
+## Best Practices
+
+### Write Defensive Code
+
+Always check for the existence of nested properties before accessing them:
+
+```javascript
+// Good
+if (baseconfig.protection && 
+    baseconfig.protection.required_pull_request_reviews &&
+    baseconfig.protection.required_pull_request_reviews.required_approving_review_count) {
+  // Validation logic
+}
+
+// Bad - may throw errors
+if (baseconfig.protection.required_pull_request_reviews.required_approving_review_count) {
+  // Validation logic
+}
+```
+
+### Use Clear Error Messages
+
+Error messages should:
+- Explain what policy was violated
+- Provide guidance on how to fix the issue
+- Include relevant configuration values when helpful
+
+```yaml
+error: |
+  `Branch protection required_approving_review_count cannot be overridden to a lower value`
+  Org requires: 2 approvals
+  Your config: 1 approval
+  
+  Please set required_approving_review_count to 2 or higher.
+```
+
+### Test Validators Thoroughly
+
+Before deploying validators:
+
+1. Test with various configuration combinations
+2. Verify error messages are clear and actionable
+3. Use `console.log()` during development to debug
+4. Test both valid and invalid scenarios
+
+### Return Early
+
+Return `true` early for cases that don't need validation:
+
+```javascript
+script: |
+  // Skip validation for specific cases
+  if (baseconfig.name === 'exception-repo') {
+    return true
+  }
+  
+  // Main validation logic
+  return baseconfig.permission !== 'admin'
+```
+
+### Document Your Validators
+
+Maintain documentation of your custom validators:
+
+- What policy each validator enforces
+- Why the policy exists
+- Who to contact for exceptions
+- Examples of valid and invalid configurations
+
+## Debugging Validators
+
+### View Validator Output
+
+Validator `console.log()` output appears in Safe Settings application logs:
+
+```bash
+# Docker deployment
+docker logs safe-settings | grep baseConfig
+
+# Lambda deployment
+aws logs tail /aws/lambda/safe-settings --follow
+```
+
+### Test in Pull Requests
+
+1. Create a test branch in your admin repo
+2. Modify settings to trigger validation
+3. Open a PR to see validator results
+4. Check the dry-run output in the PR check
+
+### Common Issues
+
+**Validator always fails**
+- Check property names (case-sensitive)
+- Verify the structure of baseconfig/overrideconfig
+- Add console.log() to debug values
+
+**Validator never runs**
+- Verify the plugin name matches the setting name
+- Check deployment-settings.yml syntax
+- Ensure the file is in the correct location
+
+**Syntax errors**
+- JavaScript syntax must be valid
+- Return statement is required
+- Variables must be declared with let/const
+
+## Advanced Patterns
+
+### Conditional Validation by Repository
+
+```javascript
+script: |
+  // Different rules for different repo patterns
+  const repoName = baseconfig.name || ''
+  
+  if (repoName.startsWith('prod-')) {
+    return baseconfig.required_approving_review_count >= 2
+  }
+  
+  if (repoName.startsWith('dev-')) {
+    return baseconfig.required_approving_review_count >= 1
+  }
+  
+  return true
+```
+
+### Multi-Field Validation
+
+```javascript
+script: |
+  // Validate multiple related fields
+  const reviews = baseconfig.protection.required_pull_request_reviews
+  
+  if (reviews.require_code_owner_reviews) {
+    // If code owners required, must have at least 1 approval
+    return reviews.required_approving_review_count >= 1
+  }
+  
+  return true
+```
+
+### Environment-Specific Rules
+
+While validators can't directly access environment variables, you can structure your logic based on configuration patterns:
+
+```javascript
+script: |
+  // Production repositories have stricter requirements
+  if (baseconfig.topics && baseconfig.topics.includes('production')) {
+    return baseconfig.required_approving_review_count >= 3
+  }
+  
+  return baseconfig.required_approving_review_count >= 1
+```
+
+## Plugin Names Reference
+
+Validator `plugin` field must match these setting types:
+
+| Plugin Name | Setting Type |
+|------------|-------------|
+| `collaborators` | External collaborator permissions |
+| `teams` | Team permissions |
+| `branches` | Branch protection rules |
+| `labels` | Issue/PR labels |
+| `milestones` | Repository milestones |
+| `repository` | Repository settings |
+| `rulesets` | Repository rulesets |
+| `environments` | Deployment environments |
+| `autolinks` | Autolink references |
+| `custom_properties` | Custom properties |
+| `variables` | Variables |
+
+See the [configuration overview](/configuration/overview) for details on each setting type.

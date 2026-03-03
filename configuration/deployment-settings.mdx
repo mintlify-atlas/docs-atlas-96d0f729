@@ -1,0 +1,547 @@
+---
+title: Deployment Settings
+description: Configure Safe Settings runtime behavior, repository restrictions, and custom validation rules
+---
+
+Deployment settings control how Safe Settings operates, including which repositories it manages, custom validation rules, and runtime behavior. These settings are stored in a separate file from your repository configurations.
+
+## File Location
+
+Deployment settings are stored in `deployment-settings.yml` in the directory where Safe Settings is running:
+
+```
+/path/to/safe-settings/
+└── deployment-settings.yml
+```
+
+<Note>
+Unlike repository settings (which are in the admin repo), deployment settings live alongside the Safe Settings application.
+
+You can customize the file location using the `DEPLOYMENT_CONFIG_FILE` environment variable (default: `deployment-settings.yml`).
+</Note>
+
+## Restricted Repositories
+
+Control which repositories Safe Settings can manage using the `restrictedRepos` configuration.
+
+### Default Behavior
+
+If no `deployment-settings.yml` file exists, Safe Settings excludes these repositories by default:
+- `admin`
+- `.github`
+- `safe-settings`
+
+### Exclude Repositories
+
+Prevent Safe Settings from managing specific repositories:
+
+```yaml deployment-settings.yml
+restrictedRepos:
+  exclude:
+    - admin
+    - .github
+    - safe-settings
+    - admin-*         # Exclude all repos starting with 'admin-'
+    - test-*          # Exclude all test repositories
+    - "*-archive"     # Exclude all archived repositories
+```
+
+<Accordion title="When to use exclude">
+Use `exclude` when you want Safe Settings to manage most repositories except a few:
+- Administrative repositories
+- Legacy repositories
+- Repositories managed by other tools
+- Personal/test repositories
+</Accordion>
+
+### Include Repositories
+
+Only allow Safe Settings to manage specific repositories:
+
+```yaml deployment-settings.yml
+restrictedRepos:
+  include:
+    - api-*          # Only manage repos starting with 'api-'
+    - core-*         # Only manage repos starting with 'core-'
+    - docs           # Specific repo
+```
+
+<Accordion title="When to use include">
+Use `include` when you want to:
+- Gradually roll out Safe Settings to your organization
+- Limit Safe Settings to specific project areas
+- Test Safe Settings on a subset of repositories
+</Accordion>
+
+### Combine Include and Exclude
+
+You can use both `include` and `exclude` together:
+
+```yaml deployment-settings.yml
+restrictedRepos:
+  include:
+    - "*"            # Include all repositories
+  exclude:
+    - admin
+    - .github
+    - safe-settings
+    - test-*
+    - "*-archive"
+```
+
+Or more specifically:
+
+```yaml deployment-settings.yml
+restrictedRepos:
+  include:
+    - api-*          # Include all API repositories
+    - core-*         # Include all core repositories
+  exclude:
+    - api-test       # Except this one
+    - core-legacy    # And this one
+```
+
+<Note>
+**How include/exclude work together:**
+
+- If **only** `exclude` is specified → Run on all repos except excluded ones
+- If **only** `include` is specified → Run only on included repos
+- If **both** are specified → Run only on included repos that aren't excluded
+</Note>
+
+### Pattern Matching
+
+Pattern matching uses glob expressions:
+
+<CodeGroup>
+```yaml Simple Patterns
+restrictedRepos:
+  exclude:
+    - admin          # Exact match
+    - test-*         # Starts with 'test-'
+    - "*-archive"    # Ends with '-archive'
+    - "*-temp-*"     # Contains '-temp-'
+```
+
+```yaml Complex Patterns
+restrictedRepos:
+  include:
+    - "prod-*"       # Production repos
+    - "api-*"        # API repos
+    - "service-*"    # Service repos
+  exclude:
+    - "*-test"       # No test repos
+    - "*-dev"        # No dev repos
+    - "*-archive"    # No archived repos
+```
+
+```yaml Simple Array Syntax
+# Shorthand for include-only
+restrictedRepos:
+  - api
+  - core-service
+  - web-app
+```
+</CodeGroup>
+
+## Config Validators
+
+Config validators enforce global rules on settings, regardless of hierarchy level. They validate a setting on its own.
+
+### Example: Prevent Admin Collaborators
+
+Prevent anyone from assigning admin permissions to collaborators:
+
+```yaml deployment-settings.yml
+configvalidators:
+  - plugin: collaborators
+    error: |
+      Admin role cannot be assigned to collaborators
+    script: |
+      console.log(`baseConfig ${JSON.stringify(baseconfig)}`)
+      return baseconfig.permission != 'admin'
+```
+
+### Example: Enforce Topics
+
+Require all repositories to have at least one topic:
+
+```yaml deployment-settings.yml
+configvalidators:
+  - plugin: repository
+    error: |
+      All repositories must have at least one topic
+    script: |
+      return baseconfig.topics && baseconfig.topics.length > 0
+```
+
+### Example: Validate Branch Names
+
+Ensure branch protection is only applied to valid branch names:
+
+```yaml deployment-settings.yml
+configvalidators:
+  - plugin: branches
+    error: |
+      Branch name must be 'default', 'main', 'master', or match 'release/*'
+    script: |
+      const validNames = ['default', 'main', 'master']
+      const validPatterns = [/^release\/.*/]
+      
+      if (validNames.includes(baseconfig.name)) {
+        return true
+      }
+      
+      return validPatterns.some(pattern => pattern.test(baseconfig.name))
+```
+
+<Accordion title="Config validator script details">
+Config validators have access to:
+- `baseconfig` - The configuration being validated
+- `githubContext` - GitHub API context
+
+The script must return:
+- `true` if validation passes
+- `false` if validation fails (error message will be shown)
+</Accordion>
+
+## Override Validators
+
+Override validators control whether suborg or repo-level settings can override org-level settings. They validate the relationship between base and override configurations.
+
+### Example: Prevent Weakening Branch Protection
+
+Prevent repos from requiring fewer approvals than the org level:
+
+```yaml deployment-settings.yml
+overridevalidators:
+  - plugin: branches
+    error: |
+      Branch protection required_approving_review_count cannot be overridden to a lower value
+    script: |
+      console.log(`baseConfig ${JSON.stringify(baseconfig)}`)
+      console.log(`overrideConfig ${JSON.stringify(overrideconfig)}`)
+      
+      if (baseconfig.protection.required_pull_request_reviews.required_approving_review_count && 
+          overrideconfig.protection.required_pull_request_reviews.required_approving_review_count) {
+        return overrideconfig.protection.required_pull_request_reviews.required_approving_review_count >= 
+               baseconfig.protection.required_pull_request_reviews.required_approving_review_count
+      }
+      return true
+```
+
+### Example: Prevent Disabling Features
+
+Prevent repos from disabling security features:
+
+```yaml deployment-settings.yml
+overridevalidators:
+  - plugin: repository
+    error: |
+      Security features cannot be disabled at repo level
+    script: |
+      if (baseconfig.security && overrideconfig.security) {
+        // Ensure alerts aren't disabled
+        if (baseconfig.security.enableVulnerabilityAlerts === true && 
+            overrideconfig.security.enableVulnerabilityAlerts === false) {
+          return false
+        }
+        // Ensure automated fixes aren't disabled
+        if (baseconfig.security.enableAutomatedSecurityFixes === true && 
+            overrideconfig.security.enableAutomatedSecurityFixes === false) {
+          return false
+        }
+      }
+      return true
+```
+
+### Example: Require Minimum Status Checks
+
+Ensure repos don't remove required status checks:
+
+```yaml deployment-settings.yml
+overridevalidators:
+  - plugin: branches
+    error: |
+      Required status checks cannot be removed or reduced
+    script: |
+      const baseChecks = baseconfig.protection?.required_status_checks?.contexts || []
+      const overrideChecks = overrideconfig.protection?.required_status_checks?.contexts || []
+      
+      // All base checks must be present in override
+      return baseChecks.every(check => overrideChecks.includes(check))
+```
+
+<Accordion title="Override validator script details">
+Override validators have access to:
+- `baseconfig` - The base configuration (from org or suborg level)
+- `overrideconfig` - The overriding configuration (from suborg or repo level)
+- `githubContext` - GitHub API context
+
+The script must return:
+- `true` if the override is allowed
+- `false` if the override should be rejected (error message will be shown)
+</Accordion>
+
+## Validator Plugin Names
+
+Validators use plugin names to determine which settings they validate:
+
+| Plugin Name | Settings Validated |
+|------------|--------------------|
+| `repository` | Repository settings |
+| `branches` | Branch protection rules |
+| `collaborators` | Collaborator access |
+| `teams` | Team access |
+| `labels` | Labels |
+| `milestones` | Milestones |
+| `autolinks` | Autolinks |
+| `validator` | Repository name validation |
+| `rulesets` | Repository rulesets |
+| `environments` | Deployment environments |
+| `custom_properties` | Custom properties |
+| `variables` | Repository variables |
+
+## Complete Example
+
+Here's a comprehensive deployment settings file:
+
+```yaml deployment-settings.yml
+# Restrict which repositories Safe Settings manages
+restrictedRepos:
+  include:
+    - "prod-*"
+    - "api-*"
+    - "core-*"
+    - docs
+  exclude:
+    - admin
+    - .github
+    - safe-settings
+    - "*-test"
+    - "*-archive"
+
+# Config validators - validate settings independently
+configvalidators:
+  # Prevent admin permissions for collaborators
+  - plugin: collaborators
+    error: |
+      Admin role cannot be assigned to collaborators
+    script: |
+      console.log(`baseConfig ${JSON.stringify(baseconfig)}`)
+      return baseconfig.permission != 'admin'
+  
+  # Require topics on all repos
+  - plugin: repository
+    error: |
+      All repositories must have at least one topic
+    script: |
+      return baseconfig.topics && baseconfig.topics.length > 0
+  
+  # Ensure security features are enabled
+  - plugin: repository
+    error: |
+      Security features must be enabled for all repositories
+    script: |
+      if (!baseconfig.security) {
+        return false
+      }
+      return baseconfig.security.enableVulnerabilityAlerts === true && 
+             baseconfig.security.enableAutomatedSecurityFixes === true
+
+# Override validators - control what can be overridden
+overridevalidators:
+  # Prevent reducing required approvals
+  - plugin: branches
+    error: |
+      Branch protection required_approving_review_count cannot be overridden to a lower value
+    script: |
+      console.log(`baseConfig ${JSON.stringify(baseconfig)}`)
+      console.log(`overrideConfig ${JSON.stringify(overrideconfig)}`)
+      
+      if (baseconfig.protection?.required_pull_request_reviews?.required_approving_review_count && 
+          overrideconfig.protection?.required_pull_request_reviews?.required_approving_review_count) {
+        return overrideconfig.protection.required_pull_request_reviews.required_approving_review_count >= 
+               baseconfig.protection.required_pull_request_reviews.required_approving_review_count
+      }
+      return true
+  
+  # Prevent disabling enforce_admins
+  - plugin: branches
+    error: |
+      enforce_admins cannot be disabled if enabled at org level
+    script: |
+      if (baseconfig.protection?.enforce_admins === true && 
+          overrideconfig.protection?.enforce_admins === false) {
+        return false
+      }
+      return true
+  
+  # Prevent making repos public
+  - plugin: repository
+    error: |
+      Repositories cannot be changed from private to public
+    script: |
+      if (baseconfig.private === true && overrideconfig.private === false) {
+        return false
+      }
+      return true
+  
+  # Placeholder for labels (must return true)
+  - plugin: labels
+    error: |
+      Label validation error
+    script: |
+      return true
+```
+
+## Testing Validators
+
+Test your validators by creating a PR in your admin repo that should fail validation:
+
+<Steps>
+  <Step title="Create Invalid Config">
+    Create a repo config that violates your validator:
+    
+    ```yaml .github/repos/test.yml
+    collaborators:
+      - username: testuser
+        permission: admin  # This should fail validation
+    ```
+  </Step>
+  
+  <Step title="Create Pull Request">
+    Create a PR with this change. Safe Settings will run in dry-run mode.
+  </Step>
+  
+  <Step title="Check Results">
+    The check run should fail with your custom error message. Verify the error is clear and helpful.
+  </Step>
+  
+  <Step title="Iterate">
+    Adjust your validator script and error message based on the results.
+  </Step>
+</Steps>
+
+## Validator Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Clear Error Messages" icon="message">
+    Write descriptive error messages that explain what's wrong and how to fix it.
+  </Card>
+  
+  <Card title="Handle Edge Cases" icon="shield-check">
+    Check for `null`, `undefined`, and missing properties before accessing nested values.
+  </Card>
+  
+  <Card title="Log Context" icon="terminal">
+    Use `console.log` to debug your validators. Logs appear in Safe Settings output.
+  </Card>
+  
+  <Card title="Return Boolean" icon="check">
+    Always return `true` or `false`. Other return values will cause errors.
+  </Card>
+</CardGroup>
+
+## Common Validator Patterns
+
+<Tabs>
+  <Tab title="Range Validation">
+    ```yaml
+    configvalidators:
+      - plugin: branches
+        error: Required reviewers must be between 1 and 6
+        script: |
+          const count = baseconfig.protection?.required_pull_request_reviews?.required_approving_review_count
+          if (count === undefined) return true
+          return count >= 1 && count <= 6
+    ```
+  </Tab>
+  
+  <Tab title="Required Fields">
+    ```yaml
+    configvalidators:
+      - plugin: repository
+        error: Repository description is required
+        script: |
+          return baseconfig.description && baseconfig.description.length > 0
+    ```
+  </Tab>
+  
+  <Tab title="Pattern Matching">
+    ```yaml
+    configvalidators:
+      - plugin: repository
+        error: Repository name must follow naming convention
+        script: |
+          const pattern = /^(api|web|service)-[a-z0-9-]+$/
+          return pattern.test(baseconfig.name)
+    ```
+  </Tab>
+  
+  <Tab title="Whitelist">
+    ```yaml
+    overridevalidators:
+      - plugin: branches
+        error: Only specific teams can bypass protection
+        script: |
+          const allowedTeams = ['senior-engineers', 'sre-team']
+          const bypassTeams = overrideconfig.protection?.restrictions?.teams || []
+          return bypassTeams.every(team => allowedTeams.includes(team))
+    ```
+  </Tab>
+</Tabs>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Validator not running">
+    Check:
+    1. Is the plugin name correct? Must match one of the valid plugin names.
+    2. Is the YAML valid? Validate with a YAML linter.
+    3. Is the `deployment-settings.yml` file in the correct location?
+    4. Check Safe Settings logs for script errors.
+  </Accordion>
+  
+  <Accordion title="Script syntax errors">
+    Common issues:
+    - Missing return statement
+    - Using `var` instead of `const` or `let`
+    - Accessing properties that might not exist (use optional chaining: `?.`)
+    - Incorrect comparison operators
+    
+    Check Safe Settings logs for detailed JavaScript errors.
+  </Accordion>
+  
+  <Accordion title="Validator always passes/fails">
+    Add console.log statements to debug:
+    ```yaml
+    script: |
+      console.log('baseconfig:', JSON.stringify(baseconfig))
+      console.log('overrideconfig:', JSON.stringify(overrideconfig))
+      const result = /* your validation logic */
+      console.log('result:', result)
+      return result
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Sample Deployment Settings" icon="file" href="https://github.com/github/safe-settings/blob/main/docs/sample-settings/sample-deployment-settings.yml">
+    View complete sample configuration
+  </Card>
+  
+  <Card title="Configuration Hierarchy" icon="sitemap" href="/configuration/hierarchy">
+    Understand when validators run
+  </Card>
+  
+  <Card title="Environment Variables" icon="sliders" href="/api/environment-variables">
+    Configure Safe Settings runtime behavior
+  </Card>
+  
+  <Card title="Custom Validators Guide" icon="code" href="/advanced/custom-validators">
+    Advanced validator examples
+  </Card>
+</CardGroup>

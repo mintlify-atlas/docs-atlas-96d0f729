@@ -1,0 +1,364 @@
+---
+title: Basic Setup Example
+description: Complete starter configuration for a new organization with sensible defaults for security, collaboration, and repository management
+---
+
+This example provides a production-ready starter configuration for a new organization. It includes sensible defaults for security, collaboration features, and basic branch protection.
+
+## Quick Start
+
+Create `.github/settings.yml` in your admin repository with the configuration below. This will apply to all repositories in your organization.
+
+## Complete Basic Configuration
+
+<Tabs>
+  <Tab title="Production Ready">
+    ```yaml .github/settings.yml
+    # Organization-wide repository settings
+    repository:
+      # Security settings
+      private: true
+      visibility: private
+      
+      # Enable security features
+      security:
+        enableVulnerabilityAlerts: true
+        enableAutomatedSecurityFixes: true
+      
+      # Collaboration features
+      has_issues: true
+      has_projects: true
+      has_wiki: false  # Disable wikis, use docs in repo instead
+      
+      # Default branch
+      default_branch: main
+      
+      # Pull request settings
+      allow_squash_merge: true
+      allow_merge_commit: false  # Enforce squash for clean history
+      allow_rebase_merge: false
+      allow_auto_merge: true
+      delete_branch_on_merge: true  # Auto-cleanup merged branches
+      allow_update_branch: true
+      
+      # Initialize new repos with README
+      auto_init: true
+      
+      # Archive settings
+      archived: false
+
+    # Standard labels for all repositories
+    labels:
+      include:
+        - name: bug
+          color: "d73a4a"
+          description: Something isn't working
+        
+        - name: enhancement
+          color: "a2eeef"
+          description: New feature or request
+        
+        - name: documentation
+          color: "0075ca"
+          description: Improvements or additions to documentation
+        
+        - name: security
+          color: "ee0701"
+          description: Security-related issue
+        
+        - name: dependencies
+          color: "0366d6"
+          description: Pull requests that update a dependency
+        
+        - name: good first issue
+          color: "7057ff"
+          description: Good for newcomers
+      
+      exclude:
+        # Keep any release-* labels created manually
+        - name: ^release
+
+    # Basic branch protection for main branch
+    branches:
+      - name: default
+        protection:
+          # Require pull request reviews
+          required_pull_request_reviews:
+            required_approving_review_count: 1
+            dismiss_stale_reviews: true
+            require_code_owner_reviews: false  # Enable when CODEOWNERS is set up
+            require_last_push_approval: false
+            bypass_pull_request_allowances:
+              apps: []
+              users: []
+              teams: []
+            dismissal_restrictions:
+              users: []
+              teams: []
+          
+          # Require status checks
+          required_status_checks:
+            strict: true  # Require branches to be up to date
+            contexts: []  # Add your CI checks here
+          
+          # Enforce for admins
+          enforce_admins: false  # Allow admins to bypass for emergencies
+          
+          # No push restrictions
+          restrictions:
+            apps: []
+            users: []
+            teams: []
+    ```
+  </Tab>
+  
+  <Tab title="Minimal">
+    ```yaml .github/settings.yml
+    # Minimal configuration for quick setup
+    repository:
+      private: true
+      default_branch: main
+      has_issues: true
+      has_wiki: false
+      allow_squash_merge: true
+      allow_merge_commit: false
+      delete_branch_on_merge: true
+      
+      security:
+        enableVulnerabilityAlerts: true
+        enableAutomatedSecurityFixes: true
+
+    labels:
+      include:
+        - name: bug
+          color: "d73a4a"
+          description: Something isn't working
+        - name: enhancement
+          color: "a2eeef"
+          description: New feature or request
+
+    branches:
+      - name: default
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 1
+            dismiss_stale_reviews: true
+          required_status_checks:
+            strict: true
+            contexts: []
+          enforce_admins: false
+          restrictions:
+            apps: []
+            users: []
+            teams: []
+    ```
+  </Tab>
+  
+  <Tab title="Open Source">
+    ```yaml .github/settings.yml
+    # Configuration for open source projects
+    repository:
+      # Public visibility
+      private: false
+      visibility: public
+      
+      # Community features
+      has_issues: true
+      has_projects: true
+      has_wiki: true
+      
+      # Security
+      security:
+        enableVulnerabilityAlerts: true
+        enableAutomatedSecurityFixes: true
+      
+      # Default branch
+      default_branch: main
+      
+      # Merge settings
+      allow_squash_merge: true
+      allow_merge_commit: true
+      allow_rebase_merge: true
+      delete_branch_on_merge: true
+      
+      # License and gitignore
+      license_template: mit
+      gitignore_template: node
+      
+      auto_init: true
+
+    # Community labels
+    labels:
+      include:
+        - name: bug
+          color: "d73a4a"
+          description: Something isn't working
+        
+        - name: enhancement
+          color: "a2eeef"
+          description: New feature or request
+        
+        - name: good first issue
+          color: "7057ff"
+          description: Good for newcomers
+        
+        - name: help wanted
+          color: "008672"
+          description: Extra attention is needed
+        
+        - name: question
+          color: "d876e3"
+          description: Further information is requested
+
+    # Light branch protection
+    branches:
+      - name: default
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 1
+            dismiss_stale_reviews: false  # More flexible for OSS
+          required_status_checks:
+            strict: false
+            contexts: []
+          enforce_admins: false
+          restrictions:
+            apps: []
+            users: []
+            teams: []
+    ```
+  </Tab>
+</Tabs>
+
+## Configuration Breakdown
+
+### Repository Settings
+
+<AccordionGroup>
+  <Accordion title="Security Settings">
+    ```yaml
+    repository:
+      private: true
+      visibility: private
+      security:
+        enableVulnerabilityAlerts: true
+        enableAutomatedSecurityFixes: true
+    ```
+    
+    - **private/visibility**: Control who can see your repositories
+    - **enableVulnerabilityAlerts**: Get notified about security issues
+    - **enableAutomatedSecurityFixes**: Let Dependabot create PRs for security updates
+  </Accordion>
+  
+  <Accordion title="Collaboration Features">
+    ```yaml
+    repository:
+      has_issues: true
+      has_projects: true
+      has_wiki: false
+    ```
+    
+    - **has_issues**: Enable issue tracking
+    - **has_projects**: Enable project boards
+    - **has_wiki**: Usually disabled in favor of docs/ folder
+  </Accordion>
+  
+  <Accordion title="Pull Request Settings">
+    ```yaml
+    repository:
+      allow_squash_merge: true
+      allow_merge_commit: false
+      allow_rebase_merge: false
+      delete_branch_on_merge: true
+      allow_auto_merge: true
+    ```
+    
+    - **allow_squash_merge**: Recommended for clean history
+    - **allow_merge_commit**: Disable to enforce squash merging
+    - **delete_branch_on_merge**: Auto-cleanup to prevent branch sprawl
+    - **allow_auto_merge**: Enable auto-merge when checks pass
+  </Accordion>
+</AccordionGroup>
+
+### Standard Labels
+
+These labels provide a consistent categorization across all repositories:
+
+- **bug**: Issues with existing functionality
+- **enhancement**: New features or improvements
+- **documentation**: Documentation updates
+- **security**: Security-related issues
+- **dependencies**: Dependency updates
+- **good first issue**: Beginner-friendly tasks
+
+### Branch Protection
+
+The basic branch protection requires:
+- At least 1 approving review before merge
+- Stale reviews are dismissed when new code is pushed
+- Branches must be up to date before merging
+- Admins can bypass (for emergency fixes)
+
+## Adding Team Permissions
+
+Once you have basic settings in place, add team permissions:
+
+```yaml
+teams:
+  - name: engineering
+    permission: push
+  
+  - name: leads
+    permission: admin
+  
+  - name: contractors
+    permission: pull
+```
+
+See [Team Management](/examples/team-management) for more advanced patterns.
+
+## Adding Autolinks
+
+Link commit messages to external systems:
+
+```yaml
+autolinks:
+  - key_prefix: "JIRA-"
+    url_template: "https://jira.company.com/browse/JIRA-<num>"
+    is_alphanumeric: false
+  
+  - key_prefix: "TICKET-"
+    url_template: "https://ticketing.company.com/ticket/<num>"
+```
+
+Now commit messages like "Fix JIRA-1234" will automatically link to your issue tracker.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Branch Protection" icon="shield" href="/examples/branch-protection">
+    Add more sophisticated branch protection rules
+  </Card>
+  
+  <Card title="Team Management" icon="users" href="/examples/team-management">
+    Configure team permissions with patterns
+  </Card>
+  
+  <Card title="Multi-Level Config" icon="layer-group" href="/examples/multi-level-config">
+    Create suborg configs for different teams
+  </Card>
+  
+  <Card title="Custom Validation" icon="check-circle" href="/examples/custom-validation">
+    Add custom validation rules
+  </Card>
+</CardGroup>
+
+## Testing Your Configuration
+
+1. **Create a Pull Request**: Push your settings.yml to a non-default branch and create a PR
+2. **Review the Dry-Run**: Safe Settings will show you what changes will be applied
+3. **Check for Errors**: Look for validation errors in the check run
+4. **Merge**: Once approved, merge to apply settings to all repositories
+
+<Warning>
+  Make sure to test your configuration in a non-production organization first, or start with a small number of repositories.
+</Warning>

@@ -1,0 +1,657 @@
+---
+title: AWS Lambda Deployment
+description: Deploy Safe Settings to AWS Lambda using Docker containers with automated CI/CD
+---
+
+Deploy Safe Settings to AWS Lambda for a serverless, auto-scaling solution with pay-per-execution pricing.
+
+## Overview
+
+Safe Settings can be deployed to AWS Lambda using a Docker container approach that provides:
+
+- **Docker-based deployment** using the official Safe Settings source
+- **Dual Lambda functions** for webhooks and scheduled sync operations
+- **GitHub Actions CI/CD** with automated testing and deployment
+- **Production-ready architecture** with proper error handling and monitoring
+- **Auto-scaling** with serverless infrastructure
+- **Cost-effective** pay-per-execution pricing model
+
+## Production-Ready Template
+
+The recommended way to deploy to AWS Lambda is using the [SafeSettings-Template](https://github.com/bheemreddy181/SafeSettings-Template):
+
+<CardGroup cols={2}>
+
+<Card title="Quick Start" icon="rocket">
+  Click "Use this template" to get started immediately
+</Card>
+
+<Card title="Modern Architecture" icon="building">
+  Docker-based deployment with dual Lambda functions
+</Card>
+
+<Card title="Full CI/CD" icon="flask">
+  GitHub Actions with automated testing and deployment
+</Card>
+
+<Card title="Smart Routing" icon="chart-network">
+  Handles both webhooks and scheduled sync operations
+</Card>
+
+</CardGroup>
+
+## Architecture
+
+The Lambda deployment uses a **dual function architecture**:
+
+```mermaid
+graph TD
+    A[GitHub Webhooks] -->|POST| B[safe-settings-lambda]
+    C[EventBridge Schedule] -->|Trigger| D[safe-settings-scheduler]
+    E[Docker Image] --> B
+    E --> D
+    B -->|Process| F[GitHub API]
+    D -->|Sync| F
+```
+
+### Lambda Functions
+
+- **`safe-settings-lambda`**: Handles GitHub webhook events via Function URL
+- **`safe-settings-scheduler`**: Handles scheduled sync operations via EventBridge
+- **Shared Docker Image**: Both functions use the same container with different entry points
+- **Smart Handler Routing**: Automatically routes events to appropriate handlers
+
+## Prerequisites
+
+- AWS Account with ECR and Lambda access
+- GitHub repository with Actions enabled
+- **Node.js 20+ (Latest LTS recommended)** for local development
+- npm 10+ (comes with Node.js 20+)
+- GitHub App created with proper permissions
+- AWS CLI configured locally (optional, for manual setup)
+
+## Quick Setup
+
+<Steps>
+
+### Use the Template
+
+1. Go to [SafeSettings-Template](https://github.com/bheemreddy181/SafeSettings-Template)
+2. Click **"Use this template"** button
+3. Create a new repository in your organization
+4. Clone your new repository locally:
+
+```bash
+git clone https://github.com/your-org/your-safe-settings-lambda.git
+cd your-safe-settings-lambda
+```
+
+### AWS Infrastructure Setup
+
+Create the required AWS resources:
+
+```bash
+# Set variables
+export AWS_REGION=us-east-1
+export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+# Create ECR repository
+aws ecr create-repository \
+  --repository-name safe-settings-lambda \
+  --region $AWS_REGION
+
+# Create IAM role for Lambda
+aws iam create-role \
+  --role-name lambda-safe-settings-role \
+  --assume-role-policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Principal": {"Service": "lambda.amazonaws.com"},
+      "Action": "sts:AssumeRole"
+    }]
+  }'
+
+# Attach basic Lambda execution policy
+aws iam attach-role-policy \
+  --role-name lambda-safe-settings-role \
+  --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+```
+
+### Create Lambda Functions
+
+<Note>
+Both functions use the same Docker image but different entry points (command).
+</Note>
+
+```bash
+# Create main webhook function
+aws lambda create-function \
+  --function-name safe-settings-lambda \
+  --role arn:aws:iam::$AWS_ACCOUNT_ID:role/lambda-safe-settings-role \
+  --code ImageUri=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/safe-settings-lambda:latest \
+  --package-type Image \
+  --timeout 30 \
+  --memory-size 512 \
+  --image-config '{"Command":["safe-settings-handler.webhooks"]}'
+
+# Create scheduler function
+aws lambda create-function \
+  --function-name safe-settings-scheduler \
+  --role arn:aws:iam::$AWS_ACCOUNT_ID:role/lambda-safe-settings-role \
+  --code ImageUri=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/safe-settings-lambda:latest \
+  --package-type Image \
+  --timeout 60 \
+  --memory-size 512 \
+  --image-config '{"Command":["safe-settings-handler.scheduler"]}'
+```
+
+### Create Function URL
+
+Create a public Function URL for GitHub webhooks:
+
+```bash
+aws lambda create-function-url-config \
+  --function-name safe-settings-lambda \
+  --auth-type NONE \
+  --cors 'AllowOrigins=["*"],AllowMethods=["POST"]'
+
+# Get the Function URL
+aws lambda get-function-url-config \
+  --function-name safe-settings-lambda \
+  --query FunctionUrl \
+  --output text
+```
+
+Use this URL as your GitHub App webhook URL.
+
+### Configure GitHub Repository
+
+#### Repository Variables
+
+Configure in Settings → Secrets and variables → Actions → Variables:
+
+```bash
+AWS_REGION=us-east-1
+AWS_ACCOUNT_ID=123456789012
+ECR_REPOSITORY=safe-settings-lambda
+LAMBDA_FUNCTION_NAME=safe-settings-lambda
+SCHEDULER_FUNCTION_NAME=safe-settings-scheduler
+GH_ORG=your-organization
+APP_ID=123456
+WEBHOOK_SECRET=your-webhook-secret
+SAFE_SETTINGS_GITHUB_CLIENT_ID=Iv1.xxx
+```
+
+#### Repository Secrets
+
+Configure in Settings → Secrets and variables → Actions → Secrets:
+
+```bash
+AWS_ACCESS_KEY_ID=AKIA...
+AWS_SECRET_ACCESS_KEY=...
+PRIVATE_KEY=-----BEGIN RSA PRIVATE KEY-----...
+SAFE_SETTINGS_GITHUB_CLIENT_SECRET=...
+```
+
+<Warning>
+Never commit secrets to your repository. Always use GitHub Secrets for sensitive data.
+</Warning>
+
+### Deploy
+
+Push to the `master` branch to trigger deployment:
+
+```bash
+git push origin master
+```
+
+The GitHub Actions workflow will:
+1. Run tests and generate coverage reports
+2. Build the Docker image using multi-stage build
+3. Push to ECR with SHA and latest tags
+4. Update both Lambda functions
+5. Configure environment variables
+
+</Steps>
+
+## Container Architecture
+
+The template uses a **multi-stage Docker build**:
+
+```dockerfile
+# Stage 1: Copy Safe Settings source
+FROM ghcr.io/github/safe-settings:2.1.17 AS source
+
+# Stage 2: Create Lambda runtime
+FROM public.ecr.aws/lambda/nodejs:20
+
+# Copy Safe Settings source
+COPY --from=source /opt/safe-settings /var/task
+
+# Add Lambda adapter and handler
+COPY safe-settings-handler.js ${LAMBDA_TASK_ROOT}/
+COPY utils/ ${LAMBDA_TASK_ROOT}/utils/
+
+# Install Probot Lambda adapter
+RUN npm install @probot/adapter-aws-lambda-serverless
+
+CMD ["safe-settings-handler.webhooks"]
+```
+
+## Handler Logic
+
+The main handler intelligently routes events:
+
+```javascript
+// safe-settings-handler.js
+const { createLambdaFunction } = require('@probot/adapter-aws-lambda-serverless')
+const appFn = require('./index.js')
+
+// Smart routing
+exports.webhooks = async (event, context) => {
+  // Handle GitHub webhook events
+  const probot = createLambdaFunction(appFn)
+  return await probot(event, context)
+}
+
+exports.scheduler = async (event, context) => {
+  // Handle scheduled sync events
+  if (event.source === 'aws.events' || event.sync === true) {
+    // Run full sync
+    return await runFullSync()
+  }
+}
+```
+
+## Environment Variables
+
+Set environment variables on both Lambda functions:
+
+```bash
+# Update webhook function
+aws lambda update-function-configuration \
+  --function-name safe-settings-lambda \
+  --environment "Variables={
+    APP_ID=123456,
+    WEBHOOK_SECRET=your-secret,
+    PRIVATE_KEY=your-base64-key,
+    GH_ORG=your-org,
+    LOG_LEVEL=info,
+    NODE_ENV=production
+  }"
+
+# Update scheduler function
+aws lambda update-function-configuration \
+  --function-name safe-settings-scheduler \
+  --environment "Variables={
+    APP_ID=123456,
+    PRIVATE_KEY=your-base64-key,
+    GH_ORG=your-org,
+    LOG_LEVEL=info,
+    NODE_ENV=production
+  }"
+```
+
+<Note>
+The GitHub Actions workflow automatically sets these environment variables during deployment.
+</Note>
+
+## Scheduling Sync Operations
+
+Set up EventBridge to trigger periodic syncs:
+
+<Steps>
+
+### Create EventBridge Rule
+
+```bash
+# Create rule for every 5 minutes
+aws events put-rule \
+  --name safe-settings-sync-schedule \
+  --schedule-expression "rate(5 minutes)" \
+  --state ENABLED
+
+# Or use cron expression for specific times
+aws events put-rule \
+  --name safe-settings-sync-schedule \
+  --schedule-expression "cron(0 */4 * * ? *)" \
+  --state ENABLED
+```
+
+### Add Lambda Target
+
+```bash
+aws events put-targets \
+  --rule safe-settings-sync-schedule \
+  --targets "Id"="1","Arn"="arn:aws:lambda:$AWS_REGION:$AWS_ACCOUNT_ID:function:safe-settings-scheduler"
+```
+
+### Grant EventBridge Permission
+
+```bash
+aws lambda add-permission \
+  --function-name safe-settings-scheduler \
+  --statement-id allow-eventbridge \
+  --action lambda:InvokeFunction \
+  --principal events.amazonaws.com \
+  --source-arn arn:aws:events:$AWS_REGION:$AWS_ACCOUNT_ID:rule/safe-settings-sync-schedule
+```
+
+</Steps>
+
+## Manual Sync
+
+Trigger a manual sync operation:
+
+```bash
+# Invoke scheduler function
+aws lambda invoke \
+  --function-name safe-settings-scheduler \
+  --payload '{"sync": true}' \
+  response.json
+
+# View response
+cat response.json
+```
+
+## Local Development
+
+Test the Lambda function locally:
+
+<Steps>
+
+### Install Dependencies
+
+```bash
+npm install
+```
+
+### Run Tests
+
+```bash
+# Run all tests
+npm test
+
+# Run with coverage
+npm run test:coverage
+
+# Watch mode for development
+npm run test:watch
+```
+
+### Build Docker Image
+
+```bash
+docker build -t safe-settings-lambda .
+```
+
+### Test Locally with Lambda Runtime
+
+```bash
+docker run -p 9000:8080 \
+  -e APP_ID=123456 \
+  -e WEBHOOK_SECRET=test-secret \
+  -e PRIVATE_KEY="$(cat private-key.pem | base64)" \
+  safe-settings-lambda
+
+# Send test event
+curl -XPOST "http://localhost:9000/2015-03-31/functions/function/invocations" \
+  -d '{"sync": true}'
+```
+
+</Steps>
+
+## Monitoring
+
+### CloudWatch Logs
+
+View Lambda execution logs:
+
+```bash
+# Tail webhook function logs
+aws logs tail /aws/lambda/safe-settings-lambda --follow
+
+# Tail scheduler function logs
+aws logs tail /aws/lambda/safe-settings-scheduler --follow
+
+# Filter for errors
+aws logs filter-log-events \
+  --log-group-name /aws/lambda/safe-settings-lambda \
+  --filter-pattern "ERROR"
+```
+
+### CloudWatch Metrics
+
+Monitor function metrics:
+
+```bash
+# Invocation count
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/Lambda \
+  --metric-name Invocations \
+  --dimensions Name=FunctionName,Value=safe-settings-lambda \
+  --start-time 2024-01-01T00:00:00Z \
+  --end-time 2024-01-02T00:00:00Z \
+  --period 3600 \
+  --statistics Sum
+
+# Error rate
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/Lambda \
+  --metric-name Errors \
+  --dimensions Name=FunctionName,Value=safe-settings-lambda \
+  --start-time 2024-01-01T00:00:00Z \
+  --end-time 2024-01-02T00:00:00Z \
+  --period 3600 \
+  --statistics Sum
+```
+
+### GitHub Actions
+
+Monitor deployments in the Actions tab:
+- Test results and coverage reports
+- Docker build logs
+- Deployment status
+- Security audit results
+
+## Alternative: Serverless Framework
+
+For the original Serverless Framework approach, you can use `serverless.yml`:
+
+```yaml
+org: your-org
+app: safe-settings
+service: safe-settings
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  lambdaHashingVersion: 20201221
+  environment:
+    APP_ID: ${param:APP_ID}
+    PRIVATE_KEY: ${param:PRIVATE_KEY}
+    WEBHOOK_SECRET: ${param:WEBHOOK_SECRET}
+    NODE_ENV: production
+    LOG_LEVEL: debug
+
+functions:
+  webhooks:
+    handler: handler.webhooks
+    events:
+      - httpApi:
+          path: /api/github/webhooks
+          method: post
+  cronHandler:
+    handler: handler.scheduler
+    memorySize: 256
+    timeout: 900 # 15 mins (max)
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: debug
+    events:
+      - schedule:
+          rate: rate(4 hours)
+          enabled: true
+          input: {}
+```
+
+Deploy with Serverless:
+
+```bash
+npm install -g serverless
+serverless deploy \
+  --param="APP_ID=123456" \
+  --param="PRIVATE_KEY=$(cat private-key.pem | base64)" \
+  --param="WEBHOOK_SECRET=your-secret"
+```
+
+## Proxy Support
+
+The AWS Lambda handler supports HTTP/HTTPS proxies:
+
+```javascript
+// Set proxy environment variables
+process.env.http_proxy = 'http://proxy.example.com:8080'
+process.env.https_proxy = 'http://proxy.example.com:8080'
+```
+
+Update Lambda environment variables:
+
+```bash
+aws lambda update-function-configuration \
+  --function-name safe-settings-lambda \
+  --environment "Variables={
+    http_proxy=http://proxy.example.com:8080,
+    https_proxy=http://proxy.example.com:8080
+  }"
+```
+
+## Troubleshooting
+
+### Common Issues
+
+#### Module Not Found Errors
+
+Ensure `utils/` directory is included in Dockerfile:
+
+```dockerfile
+COPY utils/ ${LAMBDA_TASK_ROOT}/utils/
+```
+
+#### Environment Variables
+
+Verify all required secrets are set:
+
+```bash
+aws lambda get-function-configuration \
+  --function-name safe-settings-lambda \
+  --query Environment
+```
+
+#### Permission Errors
+
+Check IAM roles have necessary permissions:
+
+```bash
+aws iam get-role --role-name lambda-safe-settings-role
+```
+
+#### Webhook URL Issues
+
+Verify the Function URL is set correctly:
+
+```bash
+aws lambda get-function-url-config \
+  --function-name safe-settings-lambda
+```
+
+Update GitHub App webhook URL to match.
+
+#### Docker Build Failures
+
+Check base image is accessible:
+
+```bash
+docker pull ghcr.io/github/safe-settings:2.1.17
+```
+
+### Debug Mode
+
+Enable debug logging:
+
+```bash
+aws lambda update-function-configuration \
+  --function-name safe-settings-lambda \
+  --environment "Variables={LOG_LEVEL=debug}"
+```
+
+### Handler Routing Issues
+
+Verify handler commands:
+
+```bash
+# Check webhook function
+aws lambda get-function-configuration \
+  --function-name safe-settings-lambda \
+  --query ImageConfigResponse.ImageConfig.Command
+
+# Check scheduler function
+aws lambda get-function-configuration \
+  --function-name safe-settings-scheduler \
+  --query ImageConfigResponse.ImageConfig.Command
+```
+
+Should return:
+- Webhook: `["safe-settings-handler.webhooks"]`
+- Scheduler: `["safe-settings-handler.scheduler"]`
+
+## Cost Optimization
+
+### Adjust Memory and Timeout
+
+Optimize based on your workload:
+
+```bash
+# Webhook function - quick responses
+aws lambda update-function-configuration \
+  --function-name safe-settings-lambda \
+  --memory-size 512 \
+  --timeout 30
+
+# Scheduler function - longer running
+aws lambda update-function-configuration \
+  --function-name safe-settings-scheduler \
+  --memory-size 512 \
+  --timeout 60
+```
+
+### Monitor Costs
+
+Check AWS Cost Explorer for Lambda costs:
+- Invocations count
+- Duration in GB-seconds
+- Data transfer costs
+
+## Next Steps
+
+<CardGroup cols={2}>
+
+<Card title="Template Repository" icon="github" href="https://github.com/bheemreddy181/SafeSettings-Template">
+  Get the production-ready template
+</Card>
+
+<Card title="Configure Settings" icon="gear" href="/configuration/overview">
+  Set up your repository settings
+</Card>
+
+<Card title="Monitoring" icon="chart-line" href="/deployment/overview">
+  Set up CloudWatch monitoring
+</Card>
+
+<Card title="GitHub Actions" icon="github" href="/deployment/github-actions">
+  Alternative deployment method
+</Card>
+
+</CardGroup>

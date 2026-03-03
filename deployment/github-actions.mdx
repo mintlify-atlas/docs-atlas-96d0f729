@@ -1,0 +1,576 @@
+---
+title: GitHub Actions Deployment
+description: Run Safe Settings scheduled sync using GitHub Actions without maintaining infrastructure
+---
+
+Run Safe Settings with GitHub Actions for scheduled synchronization without maintaining any infrastructure. This approach is ideal for organizations that want automated drift prevention without dedicated servers.
+
+## Overview
+
+GitHub Actions deployment provides:
+
+- **No infrastructure** - Runs entirely on GitHub's infrastructure
+- **Scheduled sync** - Automated periodic synchronization
+- **Manual triggers** - Run sync on-demand via `workflow_dispatch`
+- **Simple setup** - Just add a workflow file
+- **Cost-effective** - Uses GitHub Actions minutes
+- **Version pinning** - Control which Safe Settings version to use
+
+<Note>
+This method runs Safe Settings in **sync mode only**. For real-time webhook processing, use [Docker](/deployment/docker), [AWS Lambda](/deployment/aws-lambda), or [Kubernetes](/deployment/kubernetes).
+</Note>
+
+## Prerequisites
+
+- GitHub repository with Actions enabled (recommended: `.github` repo)
+- GitHub App created with proper permissions
+- Admin repository configured with Safe Settings configuration files
+- GitHub App credentials stored as repository secrets
+
+## Quick Setup
+
+<Steps>
+
+### Create GitHub App
+
+If you haven't already, create a GitHub App with the required permissions.
+
+[Learn how to create a GitHub App →](/deployment/github-app)
+
+### Configure Repository Secrets
+
+Add secrets to your repository (Settings → Secrets and variables → Actions → Secrets):
+
+```bash
+SAFE_SETTINGS_APP_ID=123456
+SAFE_SETTINGS_PRIVATE_KEY=-----BEGIN RSA PRIVATE KEY-----...
+SAFE_SETTINGS_GITHUB_CLIENT_SECRET=your-client-secret
+```
+
+### Configure Repository Variables
+
+Add variables (Settings → Secrets and variables → Actions → Variables):
+
+```bash
+SAFE_SETTINGS_GH_ORG=your-organization
+SAFE_SETTINGS_APP_ID=123456
+SAFE_SETTINGS_GITHUB_CLIENT_ID=Iv1.xxx
+```
+
+<Note>
+`APP_ID` is not sensitive and can be stored as a variable instead of a secret for better visibility.
+</Note>
+
+### Create Workflow File
+
+Create `.github/workflows/safe-settings-sync.yml`:
+
+```yaml .github/workflows/safe-settings-sync.yml
+name: Safe Settings Sync
+on:
+  schedule:
+    # Run every 4 hours
+    - cron: "0 */4 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  safeSettingsSync:
+    runs-on: ubuntu-latest
+    env:
+      # Version/tag of github/safe-settings repo to use
+      SAFE_SETTINGS_VERSION: 2.1.17
+
+      # Path on runner where safe-settings code will be downloaded
+      SAFE_SETTINGS_CODE_DIR: ${{ github.workspace }}/.safe-settings-code
+    steps:
+      # Checkout admin repo for safe-settings config
+      - uses: actions/checkout@v4
+
+      # Checkout safe-settings repo
+      - uses: actions/checkout@v4
+        with:
+          repository: github/safe-settings
+          ref: ${{ env.SAFE_SETTINGS_VERSION }}
+          path: ${{ env.SAFE_SETTINGS_CODE_DIR }}
+
+      # Setup Node.js
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Install dependencies
+      - run: npm install
+        working-directory: ${{ env.SAFE_SETTINGS_CODE_DIR }}
+
+      # Run full sync
+      - run: npm run full-sync
+        working-directory: ${{ env.SAFE_SETTINGS_CODE_DIR }}
+        env:
+          GH_ORG: ${{ vars.SAFE_SETTINGS_GH_ORG }}
+          APP_ID: ${{ vars.SAFE_SETTINGS_APP_ID }}
+          PRIVATE_KEY: ${{ secrets.SAFE_SETTINGS_PRIVATE_KEY }}
+          GITHUB_CLIENT_ID: ${{ vars.SAFE_SETTINGS_GITHUB_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.SAFE_SETTINGS_GITHUB_CLIENT_SECRET }}
+          ADMIN_REPO: .github
+          CONFIG_PATH: safe-settings
+          DEPLOYMENT_CONFIG_FILE: ${{ github.workspace }}/safe-settings/deployment-settings.yml
+```
+
+### Commit and Push
+
+```bash
+git add .github/workflows/safe-settings-sync.yml
+git commit -m "Add Safe Settings sync workflow"
+git push
+```
+
+### Verify Workflow
+
+Go to your repository's Actions tab and verify the workflow appears.
+
+</Steps>
+
+## Workflow Configuration
+
+### Schedule Frequency
+
+Adjust the cron schedule to control sync frequency:
+
+<CodeGroup>
+
+```yaml Every 4 Hours
+on:
+  schedule:
+    - cron: "0 */4 * * *"
+```
+
+```yaml Every Hour
+on:
+  schedule:
+    - cron: "0 * * * *"
+```
+
+```yaml Every Day at Midnight
+on:
+  schedule:
+    - cron: "0 0 * * *"
+```
+
+```yaml Every Monday at 9 AM
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+```
+
+</CodeGroup>
+
+<Note>
+GitHub Actions uses UTC timezone. Adjust your schedule accordingly.
+</Note>
+
+### Manual Triggers
+
+The `workflow_dispatch` event allows manual execution:
+
+```yaml
+on:
+  schedule:
+    - cron: "0 */4 * * *"
+  workflow_dispatch: {}  # Enables manual trigger
+```
+
+Run manually:
+1. Go to Actions tab
+2. Select "Safe Settings Sync" workflow
+3. Click "Run workflow"
+
+### Safe Settings Version
+
+Pin to a specific version for stability:
+
+```yaml
+env:
+  SAFE_SETTINGS_VERSION: 2.1.17  # Use specific version
+  # SAFE_SETTINGS_VERSION: main  # Use latest (not recommended)
+```
+
+<Warning>
+Always use a specific version tag (e.g., `2.1.17`) instead of `main` for production workflows to ensure reproducible builds.
+</Warning>
+
+## Configuration Paths
+
+### Standard Configuration
+
+Use default paths in your `.github` repository:
+
+```yaml
+env:
+  ADMIN_REPO: .github
+  CONFIG_PATH: safe-settings
+  DEPLOYMENT_CONFIG_FILE: ${{ github.workspace }}/safe-settings/deployment-settings.yml
+```
+
+Repository structure:
+
+```
+.github/
+├── .github/workflows/
+│   └── safe-settings-sync.yml
+└── safe-settings/
+    ├── settings.yml
+    ├── deployment-settings.yml
+    ├── suborgs/
+    │   ├── team-a.yml
+    │   └── team-b.yml
+    └── repos/
+        ├── repo-1.yml
+        └── repo-2.yml
+```
+
+### Custom Admin Repository
+
+Use a different repository:
+
+```yaml
+env:
+  ADMIN_REPO: admin  # Your custom admin repo name
+  CONFIG_PATH: .github
+```
+
+### Multiple Configuration Directories
+
+Run different configurations:
+
+```yaml
+jobs:
+  syncProduction:
+    # ... steps ...
+    env:
+      CONFIG_PATH: production
+      DEPLOYMENT_CONFIG_FILE: ${{ github.workspace }}/production/deployment-settings.yml
+
+  syncStaging:
+    # ... steps ...
+    env:
+      CONFIG_PATH: staging
+      DEPLOYMENT_CONFIG_FILE: ${{ github.workspace }}/staging/deployment-settings.yml
+```
+
+## Environment Variables
+
+### Required Variables
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `GH_ORG` | Variable | Organization name |
+| `APP_ID` | Variable | GitHub App ID |
+| `PRIVATE_KEY` | Secret | GitHub App private key |
+| `GITHUB_CLIENT_ID` | Variable | GitHub OAuth client ID |
+| `GITHUB_CLIENT_SECRET` | Secret | GitHub OAuth client secret |
+
+### Optional Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ADMIN_REPO` | `admin` | Repository containing configuration |
+| `CONFIG_PATH` | `.github` | Path to configuration directory |
+| `SETTINGS_FILE_PATH` | `settings.yml` | Settings file name |
+| `DEPLOYMENT_CONFIG_FILE` | - | Path to deployment settings |
+| `LOG_LEVEL` | `info` | Logging level |
+| `GHE_HOST` | - | GitHub Enterprise Server host |
+
+### GitHub Enterprise Server
+
+For GHES deployments:
+
+```yaml
+env:
+  GHE_HOST: github.mycompany.com
+  # ... other variables ...
+```
+
+## Advanced Workflows
+
+### Multiple Organizations
+
+Sync settings for multiple organizations:
+
+```yaml
+name: Safe Settings Multi-Org Sync
+
+on:
+  schedule:
+    - cron: "0 */4 * * *"
+  workflow_dispatch:
+    inputs:
+      organization:
+        description: 'Organization to sync (leave empty for all)'
+        required: false
+
+jobs:
+  syncOrgA:
+    runs-on: ubuntu-latest
+    steps:
+      # ... checkout and setup steps ...
+      - run: npm run full-sync
+        working-directory: ${{ env.SAFE_SETTINGS_CODE_DIR }}
+        env:
+          GH_ORG: org-a
+          APP_ID: ${{ vars.ORG_A_APP_ID }}
+          PRIVATE_KEY: ${{ secrets.ORG_A_PRIVATE_KEY }}
+          # ... other variables ...
+
+  syncOrgB:
+    runs-on: ubuntu-latest
+    steps:
+      # ... checkout and setup steps ...
+      - run: npm run full-sync
+        working-directory: ${{ env.SAFE_SETTINGS_CODE_DIR }}
+        env:
+          GH_ORG: org-b
+          APP_ID: ${{ vars.ORG_B_APP_ID }}
+          PRIVATE_KEY: ${{ secrets.ORG_B_PRIVATE_KEY }}
+          # ... other variables ...
+```
+
+### Dry Run Mode
+
+Validate changes without applying:
+
+```yaml
+- run: npm run full-sync
+  working-directory: ${{ env.SAFE_SETTINGS_CODE_DIR }}
+  env:
+    # ... other variables ...
+    DRY_RUN: true
+```
+
+### Notification on Failure
+
+Send notifications when sync fails:
+
+```yaml
+jobs:
+  safeSettingsSync:
+    runs-on: ubuntu-latest
+    steps:
+      # ... sync steps ...
+
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'Safe Settings sync failed',
+              body: `Sync failed at ${new Date().toISOString()}\n\nSee: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              labels: ['safe-settings', 'automation-failure']
+            })
+```
+
+### Matrix Strategy for Multiple Environments
+
+```yaml
+jobs:
+  safeSettingsSync:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [production, staging, development]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: github/safe-settings
+          ref: 2.1.17
+          path: .safe-settings-code
+
+      - uses: actions/setup-node@v4
+      - run: npm install
+        working-directory: .safe-settings-code
+
+      - run: npm run full-sync
+        working-directory: .safe-settings-code
+        env:
+          GH_ORG: ${{ vars.SAFE_SETTINGS_GH_ORG }}
+          APP_ID: ${{ vars[format('SAFE_SETTINGS_APP_ID_{0}', matrix.environment)] }}
+          PRIVATE_KEY: ${{ secrets[format('SAFE_SETTINGS_PRIVATE_KEY_{0}', matrix.environment)] }}
+          CONFIG_PATH: ${{ matrix.environment }}
+```
+
+## Monitoring
+
+### View Workflow Runs
+
+Monitor sync execution:
+
+1. Go to repository's **Actions** tab
+2. Select **Safe Settings Sync** workflow
+3. View run history and logs
+
+### Check Run Status
+
+Use GitHub CLI:
+
+```bash
+# List recent runs
+gh run list --workflow=safe-settings-sync.yml
+
+# View specific run
+gh run view <run-id>
+
+# View logs
+gh run view <run-id> --log
+```
+
+### Workflow Status Badge
+
+Add a badge to your README:
+
+```markdown
+![Safe Settings Sync](https://github.com/your-org/.github/actions/workflows/safe-settings-sync.yml/badge.svg)
+```
+
+## Troubleshooting
+
+### Workflow Not Running
+
+**Cron Schedule Not Triggering:**
+- GitHub Actions may delay scheduled workflows during high load
+- Scheduled workflows don't run on disabled repositories
+- Workflow must be in default branch to run on schedule
+
+**Solution:** Use `workflow_dispatch` for immediate testing:
+
+```bash
+gh workflow run safe-settings-sync.yml
+```
+
+### Authentication Errors
+
+**Invalid App ID or Private Key:**
+
+Verify secrets are set correctly:
+
+```bash
+gh secret list
+gh variable list
+```
+
+Update if needed:
+
+```bash
+gh secret set SAFE_SETTINGS_PRIVATE_KEY < private-key.pem
+gh variable set SAFE_SETTINGS_APP_ID --body "123456"
+```
+
+### Node Version Issues
+
+Safe Settings requires Node.js 18+:
+
+```yaml
+- uses: actions/setup-node@v4
+  with:
+    node-version: '20'  # Use Node 20 LTS
+```
+
+### Configuration File Not Found
+
+Ensure paths are correct:
+
+```yaml
+env:
+  DEPLOYMENT_CONFIG_FILE: ${{ github.workspace }}/safe-settings/deployment-settings.yml
+```
+
+Verify file exists:
+
+```yaml
+- name: Check config file
+  run: ls -la ${{ github.workspace }}/safe-settings/
+```
+
+### Timeout Issues
+
+For large organizations, increase timeout:
+
+```yaml
+jobs:
+  safeSettingsSync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60  # Default is 360 (6 hours)
+```
+
+## Cost Considerations
+
+### GitHub Actions Minutes
+
+GitHub Actions usage depends on your plan:
+
+| Plan | Included Minutes | Price per Additional Minute |
+|------|------------------|-----------------------------|
+| Free | 2,000/month | N/A |
+| Pro | 3,000/month | $0.008 |
+| Team | 3,000/month | $0.008 |
+| Enterprise | 50,000/month | $0.008 |
+
+Estimated usage:
+- Average sync: 2-5 minutes
+- Every 4 hours: ~30 runs/month
+- Total: ~60-150 minutes/month
+
+<Note>
+Most organizations will stay within free tier limits with this usage pattern.
+</Note>
+
+### Optimization Tips
+
+1. **Adjust schedule frequency** based on drift tolerance
+2. **Use repository restrictions** to limit scope
+3. **Combine with webhook-based deployment** for real-time updates + drift prevention
+
+## Combining with Webhook Deployment
+
+For production environments, combine GitHub Actions with webhook-based deployment:
+
+```mermaid
+graph LR
+    A[GitHub Events] -->|Real-time| B[Webhook Handler]
+    C[GitHub Actions] -->|Scheduled| D[Full Sync]
+    B --> E[Apply Settings]
+    D --> E
+```
+
+- **Webhooks** (Docker/Lambda/K8s): Real-time event processing
+- **GitHub Actions**: Periodic drift prevention
+
+This provides:
+- Immediate response to configuration changes
+- Regular drift detection and correction
+- Redundancy if webhooks fail
+
+## Next Steps
+
+<CardGroup cols={2}>
+
+<Card title="Configure Settings" icon="gear" href="/configuration/overview">
+  Set up your repository settings
+</Card>
+
+<Card title="Docker Deployment" icon="docker" href="/deployment/docker">
+  Add webhook processing
+</Card>
+
+<Card title="AWS Lambda" icon="aws" href="/deployment/aws-lambda">
+  Serverless webhooks + scheduled sync
+</Card>
+
+<Card title="GitHub Actions Docs" icon="book" href="https://docs.github.com/en/actions">
+  Learn more about GitHub Actions
+</Card>
+
+</CardGroup>

@@ -1,0 +1,551 @@
+---
+title: Docker Deployment
+description: Deploy Safe Settings using Docker containers for local or cloud environments
+---
+
+Deploy Safe Settings using Docker for a quick, portable deployment that works locally or in any cloud environment.
+
+## Prerequisites
+
+- Docker installed (Docker 20.x or later)
+- Docker Compose (optional, but recommended)
+- GitHub App created with credentials
+- Node.js 18.x or later for local builds
+
+## Quick Start
+
+<Steps>
+
+### Clone the Repository
+
+```bash
+git clone https://github.com/github/safe-settings.git
+cd safe-settings/
+```
+
+### Configure Environment
+
+Create `.env` file with your GitHub App credentials:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` with your values:
+
+```bash
+# Required
+APP_ID=123456
+WEBHOOK_SECRET=your-webhook-secret
+PRIVATE_KEY="$(cat private-key.pem | base64)"
+
+# Optional
+ADMIN_REPO=admin
+LOG_LEVEL=info
+NODE_ENV=production
+```
+
+<Note>
+For Docker deployments, use `PRIVATE_KEY` (base64 encoded) instead of `PRIVATE_KEY_PATH` to avoid file path issues.
+</Note>
+
+### Build the Docker Image
+
+```bash
+docker build -t safe-settings .
+```
+
+The build process:
+- Uses Node.js 22 Alpine base image
+- Installs dependencies with `npm ci`
+- Copies application files
+- Exposes port 3000
+
+### Run with Docker Compose (Recommended)
+
+```bash
+docker-compose --env-file .env up -d
+```
+
+This starts the container in detached mode.
+
+</Steps>
+
+## Dockerfile Structure
+
+The Safe Settings Dockerfile is optimized for production:
+
+```dockerfile
+FROM node:22-alpine
+WORKDIR /opt/safe-settings
+ENV NODE_ENV production
+
+## Set the Labels
+LABEL version="1.0" \
+      description="Probot app which is a modified version of Settings Probot GitHub App" \
+      maintainer="GitHub Professional Services <services@github.com>"
+
+## These files are copied separately to allow updates
+## to the image to be as small as possible
+COPY  package*.json /opt/safe-settings/
+COPY  index.js /opt/safe-settings/
+COPY  lib /opt/safe-settings/lib
+
+## Install the app and dependencies
+RUN npm ci
+
+## This app will listen on port 3000
+EXPOSE 3000
+
+USER node
+
+## This does not start properly when using the ['npm','start'] format
+## so stick with just calling it outright
+CMD npm start
+```
+
+## Running Docker Container
+
+### Using Docker Compose
+
+The recommended approach using docker-compose:
+
+<CodeGroup>
+
+```bash Start
+docker-compose --env-file .env up -d
+```
+
+```bash Stop
+docker-compose down
+```
+
+```bash View Logs
+docker-compose logs -f
+```
+
+```bash Restart
+docker-compose restart
+```
+
+</CodeGroup>
+
+### Using Docker CLI
+
+#### Detached Mode (Background)
+
+Run the container in the background:
+
+```bash
+docker run -d \
+  --name safe-settings \
+  -p 3000:3000 \
+  --env-file .env \
+  safe-settings
+```
+
+Verify it's running:
+
+```bash
+docker ps
+```
+
+You should see `safe-settings` in the list.
+
+#### Interactive Mode (Foreground)
+
+For debugging, run in interactive mode:
+
+```bash
+docker run -it \
+  -p 3000:3000 \
+  --env-file .env \
+  safe-settings
+```
+
+This shows logs directly in your terminal.
+
+#### With Individual Environment Variables
+
+Instead of using `--env-file`:
+
+```bash
+docker run -d \
+  --name safe-settings \
+  -p 3000:3000 \
+  -e APP_ID=123456 \
+  -e WEBHOOK_SECRET=your-secret \
+  -e PRIVATE_KEY="your-base64-key" \
+  -e LOG_LEVEL=info \
+  safe-settings
+```
+
+## Container Management
+
+### View Logs
+
+```bash
+# Follow logs in real-time
+docker logs -f safe-settings
+
+# View last 100 lines
+docker logs --tail 100 safe-settings
+
+# View logs since 10 minutes ago
+docker logs --since 10m safe-settings
+```
+
+### Connect to Running Container
+
+Access the container shell for debugging:
+
+```bash
+docker exec -it safe-settings /bin/sh
+```
+
+Inside the container:
+
+```bash
+# Check node version
+node --version
+
+# View process
+ps aux
+
+# Check environment variables
+env | grep APP_ID
+
+# Exit
+exit
+```
+
+### Stop and Remove
+
+```bash
+# Stop container
+docker stop safe-settings
+
+# Remove container
+docker rm safe-settings
+
+# Stop and remove in one command
+docker rm -f safe-settings
+```
+
+### Restart Container
+
+```bash
+# Restart
+docker restart safe-settings
+
+# Restart with new environment variables
+docker rm -f safe-settings
+docker run -d --name safe-settings -p 3000:3000 --env-file .env safe-settings
+```
+
+## Environment Variables
+
+Create a `.env` file with all required variables:
+
+```bash
+# GitHub App Credentials (Required)
+APP_ID=123456
+WEBHOOK_SECRET=your-webhook-secret-here
+PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\nMII...\n-----END RSA PRIVATE KEY-----"
+
+# Or use base64 encoded (recommended for Docker)
+PRIVATE_KEY="TUlJRXB...base64-encoded-key"
+
+# Application Settings
+NODE_ENV=production
+LOG_LEVEL=info
+PORT=3000
+
+# Safe Settings Configuration
+ADMIN_REPO=admin
+CONFIG_PATH=.github
+SETTINGS_FILE_PATH=settings.yml
+DEPLOYMENT_CONFIG_FILE=deployment-settings.yml
+
+# Optional: Scheduled Sync
+CRON='0 * * * *'  # Run every hour
+
+# Optional: GitHub Enterprise Server
+GHE_HOST=github.mycompany.com
+
+# Optional: Local Development
+WEBHOOK_PROXY_URL=https://smee.io/your-channel
+
+# Optional: SSL (use with caution)
+NODE_TLS_REJECT_UNAUTHORIZED=0
+```
+
+<Warning>
+Never commit `.env` files to version control. Add `.env` to your `.gitignore` file.
+</Warning>
+
+## Using Private Key File
+
+If you prefer using a private key file instead of environment variable:
+
+### Modify Dockerfile
+
+Add this line before the `CMD` instruction:
+
+```dockerfile
+COPY private-key.pem /opt/safe-settings/.data/private-key.pem
+```
+
+### Update Environment Variable
+
+In your `.env` file:
+
+```bash
+PRIVATE_KEY_PATH=/opt/safe-settings/.data/private-key.pem
+```
+
+### Rebuild Image
+
+```bash
+docker build -t safe-settings .
+```
+
+## Production Deployment
+
+For production deployments:
+
+### Use Docker Compose
+
+Create `docker-compose.yml`:
+
+```yaml
+version: '3.8'
+
+services:
+  safe-settings:
+    build: .
+    container_name: safe-settings
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/probot"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+```
+
+### Add Health Check
+
+Verify the container is healthy:
+
+```bash
+docker inspect --format='{{.State.Health.Status}}' safe-settings
+```
+
+### Set Resource Limits
+
+Limit container resources:
+
+```bash
+docker run -d \
+  --name safe-settings \
+  -p 3000:3000 \
+  --env-file .env \
+  --memory="512m" \
+  --cpus="1.0" \
+  --restart unless-stopped \
+  safe-settings
+```
+
+### Enable Auto-Restart
+
+```bash
+docker update --restart unless-stopped safe-settings
+```
+
+## Networking
+
+### Expose to Internet
+
+For production, use a reverse proxy:
+
+#### Using Nginx
+
+```nginx
+server {
+    listen 80;
+    server_name safe-settings.example.com;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+#### Using Traefik
+
+Add labels to docker-compose.yml:
+
+```yaml
+services:
+  safe-settings:
+    # ... other config ...
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.safe-settings.rule=Host(`safe-settings.example.com`)"
+      - "traefik.http.services.safe-settings.loadbalancer.server.port=3000"
+```
+
+### Docker Network
+
+Create a dedicated network:
+
+```bash
+# Create network
+docker network create safe-settings-network
+
+# Run container in network
+docker run -d \
+  --name safe-settings \
+  --network safe-settings-network \
+  -p 3000:3000 \
+  --env-file .env \
+  safe-settings
+```
+
+## Updating Safe Settings
+
+<Steps>
+
+### Pull Latest Code
+
+```bash
+git pull origin main
+```
+
+### Rebuild Image
+
+```bash
+docker build -t safe-settings .
+```
+
+### Restart Container
+
+```bash
+docker-compose down
+docker-compose --env-file .env up -d
+```
+
+</Steps>
+
+## Troubleshooting
+
+### Container Won't Start
+
+Check logs for errors:
+
+```bash
+docker logs safe-settings
+```
+
+Common issues:
+- Missing or invalid environment variables
+- Port 3000 already in use
+- Invalid private key format
+
+### Port Already in Use
+
+Use a different port:
+
+```bash
+docker run -d -p 8080:3000 --env-file .env safe-settings
+```
+
+Update webhook URL to include the new port.
+
+### Memory Issues
+
+Increase container memory:
+
+```bash
+docker run -d --memory="1g" --env-file .env safe-settings
+```
+
+### Permission Errors
+
+The container runs as user `node` (UID 1000). If you have permission issues:
+
+```bash
+# Check file ownership
+docker exec safe-settings ls -la
+
+# Fix ownership if needed (in Dockerfile)
+RUN chown -R node:node /opt/safe-settings
+```
+
+## Monitoring
+
+### View Container Stats
+
+```bash
+# Real-time stats
+docker stats safe-settings
+
+# One-time stats
+docker stats --no-stream safe-settings
+```
+
+### Export Logs
+
+```bash
+# Export to file
+docker logs safe-settings > safe-settings.log
+
+# Export with timestamps
+docker logs -t safe-settings > safe-settings.log
+```
+
+### Health Check
+
+Manually check health:
+
+```bash
+curl http://localhost:3000/probot
+```
+
+Should return the Probot status page.
+
+## Next Steps
+
+<CardGroup cols={2}>
+
+<Card title="Configure Settings" icon="gear" href="/configuration/overview">
+  Set up your repository settings
+</Card>
+
+<Card title="AWS Lambda" icon="aws" href="/deployment/aws-lambda">
+  Deploy to serverless
+</Card>
+
+<Card title="Kubernetes" icon="dharmachakra" href="/deployment/kubernetes">
+  Scale with Kubernetes
+</Card>
+
+<Card title="GitHub Actions" icon="github" href="/deployment/github-actions">
+  Scheduled sync with Actions
+</Card>
+
+</CardGroup>

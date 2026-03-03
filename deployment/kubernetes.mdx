@@ -1,0 +1,759 @@
+---
+title: Kubernetes Deployment
+description: Deploy Safe Settings to Kubernetes using Helm charts or kubectl for production-grade orchestration
+---
+
+Deploy Safe Settings to Kubernetes for production-grade orchestration with high availability, auto-scaling, and robust monitoring.
+
+## Overview
+
+Kubernetes deployment provides:
+
+- **Production-ready** Helm charts maintained by GitHub
+- **High availability** with replica sets
+- **Auto-scaling** with Horizontal Pod Autoscaler
+- **Security** with pod security contexts and read-only root filesystem
+- **Monitoring** with built-in health checks
+- **Flexibility** for custom configurations
+
+## Prerequisites
+
+- Kubernetes cluster (1.19+)
+- `kubectl` configured to access your cluster
+- Helm 3.x (for Helm deployment method)
+- GitHub App created with credentials
+- Container registry access (or use public `ghcr.io/github/safe-settings`)
+
+## Deployment Methods
+
+Choose between Helm (recommended) or kubectl:
+
+<CardGroup cols={2}>
+
+<Card title="Helm" icon="dharmachakra">
+  Recommended for production deployments
+</Card>
+
+<Card title="kubectl" icon="terminal">
+  Direct deployment with manifest files
+</Card>
+
+</CardGroup>
+
+## Method 1: Helm Deployment (Recommended)
+
+<Steps>
+
+### Install Helm
+
+If you don't have Helm installed:
+
+<CodeGroup>
+
+```bash macOS
+brew install helm
+```
+
+```bash Linux
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+```
+
+```bash Windows
+choco install kubernetes-helm
+```
+
+</CodeGroup>
+
+Verify installation:
+
+```bash
+helm version
+```
+
+### View Available Chart
+
+Check the latest Helm chart version:
+
+```bash
+helm show chart oci://ghcr.io/github/helm-charts/safe-settings
+```
+
+### View Configurable Values
+
+See all available configuration options:
+
+```bash
+helm show values oci://ghcr.io/github/helm-charts/safe-settings
+```
+
+### Create Values File
+
+Create `myvalues.yaml` with your configuration:
+
+```yaml myvalues.yaml
+# GitHub App credentials (required)
+envFrom:
+  - secretRef:
+      name: safe-settings-secrets
+
+# Application configuration
+env:
+  - name: ADMIN_REPO
+    value: "admin"
+  - name: LOG_LEVEL
+    value: "info"
+  - name: CONFIG_PATH
+    value: ".github"
+  - name: SETTINGS_FILE_PATH
+    value: "settings.yml"
+
+# Image configuration
+image:
+  repository: ghcr.io/github/safe-settings
+  pullPolicy: IfNotPresent
+  tag: "2.1.17"
+
+# Replica configuration
+replicaCount: 2
+
+# Resource limits
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 3000
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: safe-settings.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: safe-settings-tls
+      hosts:
+        - safe-settings.example.com
+
+# Autoscaling
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+
+# Deployment config (custom validators, restricted repos)
+deploymentConfig:
+  restrictedRepos:
+    exclude: ["^admin$", '^\.github$', "^safe-settings$"]
+```
+
+### Create Kubernetes Secret
+
+Create a secret with your GitHub App credentials:
+
+```bash
+kubectl create secret generic safe-settings-secrets \
+  --from-literal=APP_ID="123456" \
+  --from-literal=WEBHOOK_SECRET="your-webhook-secret" \
+  --from-literal=PRIVATE_KEY="$(cat private-key.pem | base64)"
+```
+
+Or from an `.env` file:
+
+```bash
+kubectl create secret generic safe-settings-secrets \
+  --from-env-file=.env
+```
+
+### Install with Helm
+
+Install the chart with your values:
+
+```bash
+helm install safe-settings \
+  oci://ghcr.io/github/helm-charts/safe-settings \
+  --values myvalues.yaml \
+  --namespace safe-settings \
+  --create-namespace
+```
+
+<Note>
+The chart will create a deployment, service, and optionally ingress and HPA based on your values.
+</Note>
+
+### Verify Installation
+
+Check the deployment status:
+
+```bash
+# Check pods
+kubectl get pods -n safe-settings
+
+# Check service
+kubectl get svc -n safe-settings
+
+# Check ingress
+kubectl get ingress -n safe-settings
+
+# View logs
+kubectl logs -n safe-settings -l app.kubernetes.io/name=safe-settings -f
+```
+
+</Steps>
+
+## Method 2: kubectl Deployment
+
+For direct deployment without Helm:
+
+<Steps>
+
+### Create Namespace
+
+```bash
+kubectl create namespace safe-settings
+```
+
+### Create Secret
+
+From `.env` file:
+
+```bash
+kubectl create secret generic app-env \
+  --from-env-file=.env \
+  --namespace safe-settings
+```
+
+Or manually:
+
+```bash
+kubectl create secret generic app-env \
+  --from-literal=APP_ID="123456" \
+  --from-literal=WEBHOOK_SECRET="your-webhook-secret" \
+  --from-literal=PRIVATE_KEY="$(cat private-key.pem | base64)" \
+  --namespace safe-settings
+```
+
+### Create Image Pull Secret (if using private registry)
+
+If using a private container registry:
+
+```bash
+kubectl create secret docker-registry regcred \
+  --docker-server=DOCKER_REGISTRY_SERVER \
+  --docker-username=DOCKER_USER \
+  --docker-password=DOCKER_PASSWORD \
+  --docker-email=DOCKER_EMAIL \
+  --namespace safe-settings
+```
+
+### Deploy Application
+
+Use the provided `safe-settings.yaml` manifest:
+
+```yaml safe-settings.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: safe-settings
+  name: safe-settings
+  namespace: safe-settings
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: safe-settings
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: safe-settings
+    spec:
+      containers:
+      - image: ghcr.io/github/safe-settings:2.1.17
+        name: safe-settings
+        ports:
+        - containerPort: 3000
+          protocol: TCP
+        envFrom:
+        - secretRef:
+            name: app-env
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 250m
+            memory: 256Mi
+        livenessProbe:
+          httpGet:
+            path: /probot
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /probot
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      # Uncomment if using private registry
+      # imagePullSecrets:
+      # - name: regcred
+```
+
+Apply the manifest:
+
+```bash
+kubectl apply -f safe-settings.yaml
+```
+
+### Create Service
+
+Create `svc-safe-settings.yaml`:
+
+```yaml svc-safe-settings.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: safe-settings
+  namespace: safe-settings
+spec:
+  type: ClusterIP
+  ports:
+  - port: 3000
+    targetPort: 3000
+    protocol: TCP
+    name: http
+  selector:
+    app: safe-settings
+```
+
+Apply the service:
+
+```bash
+kubectl apply -f svc-safe-settings.yaml
+```
+
+### Expose via Ingress (Optional)
+
+Create `ingress.yaml`:
+
+```yaml ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: safe-settings
+  namespace: safe-settings
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - safe-settings.example.com
+    secretName: safe-settings-tls
+  rules:
+  - host: safe-settings.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: safe-settings
+            port:
+              number: 3000
+```
+
+Apply the ingress:
+
+```bash
+kubectl apply -f ingress.yaml
+```
+
+</Steps>
+
+## Configuration
+
+### Environment Variables
+
+The Helm chart supports environment variables via `env` and `envFrom`:
+
+```yaml
+# Direct environment variables
+env:
+  - name: LOG_LEVEL
+    value: "debug"
+  - name: ADMIN_REPO
+    value: "admin"
+
+# From secrets
+envFrom:
+  - secretRef:
+      name: safe-settings-secrets
+```
+
+### Custom Image
+
+For production, use a custom image with a specific version:
+
+```yaml
+image:
+  repository: your-registry/safe-settings
+  pullPolicy: IfNotPresent
+  tag: "2.1.17"
+
+imagePullSecrets:
+  - name: regcred
+```
+
+<Warning>
+Always use a specific image tag (e.g., `2.1.17`) instead of `latest` for reproducible deployments.
+</Warning>
+
+### Resource Limits
+
+Set appropriate resource limits:
+
+```yaml
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+```
+
+### Auto-Scaling
+
+Enable Horizontal Pod Autoscaler:
+
+```yaml
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+```
+
+### Deployment Config
+
+Configure validators and restricted repos:
+
+```yaml
+deploymentConfig:
+  restrictedRepos:
+    exclude: ["^admin$", '^\.github$', "^safe-settings$", ".*-test"]
+    include: ["^prod-.*"]
+  configvalidators:
+    - plugin: collaborators
+      error: "Admin cannot be assigned to collaborators"
+      script: |
+        console.log(`baseConfig ${JSON.stringify(baseconfig)}`)
+        return baseconfig.permission != 'admin'
+  overridevalidators:
+    - plugin: branches
+      error: "Branch protection required_approving_review_count cannot be overidden to a lower value"
+      script: |
+        if (baseconfig.protection.required_pull_request_reviews.required_approving_review_count && 
+            overrideconfig.protection.required_pull_request_reviews.required_approving_review_count) {
+          return overrideconfig.protection.required_pull_request_reviews.required_approving_review_count >= 
+                 baseconfig.protection.required_pull_request_reviews.required_approving_review_count
+        }
+        return true
+```
+
+## Helm Chart Values Reference
+
+Key values from the Safe Settings Helm chart:
+
+```yaml
+# Replica count
+replicaCount: 2
+
+# Image configuration
+image:
+  repository: ghcr.io/github/safe-settings
+  pullPolicy: IfNotPresent
+  tag: ""
+
+imagePullSecrets: []
+
+# Service account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+  automountServiceAccountToken: false
+
+# Security context
+securityContext:
+  allowPrivilegeEscalation: false
+  privileged: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# Service
+service:
+  type: ClusterIP
+  port: 3000
+  annotations: {}
+
+# Ingress
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+
+# Resources
+resources: {}
+
+# Autoscaling
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+
+# Volumes
+volumeMounts: []
+volumes: []
+
+# Node selection
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Deployment configuration
+deploymentConfig:
+  restrictedRepos:
+    exclude: ["^admin$", '^\.github$', "^safe-settings$"]
+```
+
+## Upgrading
+
+### Helm Upgrade
+
+Upgrade to a new version:
+
+```bash
+# Update chart
+helm upgrade safe-settings \
+  oci://ghcr.io/github/helm-charts/safe-settings \
+  --values myvalues.yaml \
+  --namespace safe-settings
+
+# Verify upgrade
+kubectl rollout status deployment/safe-settings -n safe-settings
+```
+
+### kubectl Upgrade
+
+Update the image version:
+
+```bash
+kubectl set image deployment/safe-settings \
+  safe-settings=ghcr.io/github/safe-settings:2.1.17 \
+  --namespace safe-settings
+
+# Or edit the deployment
+kubectl edit deployment safe-settings -n safe-settings
+```
+
+## Monitoring
+
+### View Logs
+
+```bash
+# Follow logs from all pods
+kubectl logs -n safe-settings -l app=safe-settings -f
+
+# Logs from specific pod
+kubectl logs -n safe-settings safe-settings-xxxxxxxxxx-xxxxx -f
+
+# Previous container logs
+kubectl logs -n safe-settings safe-settings-xxxxxxxxxx-xxxxx --previous
+```
+
+### Check Health
+
+```bash
+# Get pod status
+kubectl get pods -n safe-settings
+
+# Describe pod
+kubectl describe pod -n safe-settings safe-settings-xxxxxxxxxx-xxxxx
+
+# Port forward to test locally
+kubectl port-forward -n safe-settings svc/safe-settings 3000:3000
+```
+
+### View Events
+
+```bash
+kubectl get events -n safe-settings --sort-by='.lastTimestamp'
+```
+
+## Troubleshooting
+
+### Pod Not Starting
+
+Check pod status and events:
+
+```bash
+kubectl get pods -n safe-settings
+kubectl describe pod -n safe-settings <pod-name>
+kubectl logs -n safe-settings <pod-name>
+```
+
+Common issues:
+- Image pull errors: Check `imagePullSecrets`
+- Secret not found: Verify secret exists and name matches
+- Resource limits: Check if cluster has available resources
+
+### Webhook Not Receiving Events
+
+Verify service and ingress:
+
+```bash
+# Check service
+kubectl get svc -n safe-settings
+
+# Check ingress
+kubectl get ingress -n safe-settings
+
+# Test internal connectivity
+kubectl run -it --rm debug --image=alpine --restart=Never -n safe-settings -- sh
+wget -O- http://safe-settings:3000/probot
+```
+
+### High Memory Usage
+
+Increase resource limits:
+
+```bash
+kubectl edit deployment safe-settings -n safe-settings
+
+# Or with Helm
+helm upgrade safe-settings \
+  oci://ghcr.io/github/helm-charts/safe-settings \
+  --set resources.limits.memory=1Gi \
+  --namespace safe-settings
+```
+
+### Certificate Issues
+
+If using cert-manager for TLS:
+
+```bash
+# Check certificate
+kubectl get certificate -n safe-settings
+
+# Describe certificate
+kubectl describe certificate safe-settings-tls -n safe-settings
+
+# Check cert-manager logs
+kubectl logs -n cert-manager -l app=cert-manager
+```
+
+## Uninstalling
+
+### Helm Uninstall
+
+```bash
+helm uninstall safe-settings --namespace safe-settings
+kubectl delete namespace safe-settings
+```
+
+### kubectl Uninstall
+
+```bash
+kubectl delete -f safe-settings.yaml
+kubectl delete -f svc-safe-settings.yaml
+kubectl delete secret app-env -n safe-settings
+kubectl delete namespace safe-settings
+```
+
+## Production Considerations
+
+<Note>
+For production deployments, consider these best practices:
+</Note>
+
+### High Availability
+
+- Run at least 2 replicas
+- Use pod anti-affinity to spread across nodes
+- Enable HPA for auto-scaling
+
+### Security
+
+- Use specific image tags (not `latest`)
+- Enable pod security contexts
+- Store secrets in external secret managers (e.g., HashiCorp Vault, AWS Secrets Manager)
+- Use network policies to restrict traffic
+
+### Monitoring
+
+- Set up Prometheus metrics
+- Configure CloudWatch or similar logging
+- Enable alerting for pod failures
+- Monitor resource usage
+
+### Backup
+
+- Back up your configuration files
+- Document your Helm values
+- Keep GitHub App credentials secure
+
+## Next Steps
+
+<CardGroup cols={2}>
+
+<Card title="Configure Settings" icon="gear" href="/configuration/overview">
+  Set up your repository settings
+</Card>
+
+<Card title="Helm Chart Repo" icon="github" href="https://github.com/github/safe-settings/tree/main/helm">
+  View Helm chart source
+</Card>
+
+<Card title="AWS Lambda" icon="aws" href="/deployment/aws-lambda">
+  Alternative serverless deployment
+</Card>
+
+<Card title="GitHub Actions" icon="github" href="/deployment/github-actions">
+  Scheduled sync with Actions
+</Card>
+
+</CardGroup>

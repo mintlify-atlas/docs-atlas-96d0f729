@@ -1,0 +1,285 @@
+---
+title: Autolinks
+description: Configure autolink references to external resources like JIRA, Linear, or custom issue trackers
+---
+
+The `autolinks` section configures autolink references that automatically link issue tracker references in issues, pull requests, and commit messages to external URLs.
+
+## Overview
+
+Autolinks enable GitHub to automatically convert references (like `JIRA-123` or `TICKET-456`) into clickable links. When someone mentions an autolink key prefix in an issue, pull request, or commit message, GitHub automatically creates a hyperlink to your external system.
+
+## Basic Configuration
+
+<ParamField path="key_prefix" type="string" required>
+  The prefix that will trigger the autolink. This prefix is matched at the start of the reference.
+  
+  ```yaml
+  autolinks:
+    - key_prefix: "JIRA-"
+      url_template: "https://jira.example.com/browse/JIRA-<num>"
+  ```
+</ParamField>
+
+<ParamField path="url_template" type="string" required>
+  The URL template that will be used to create the link. Use `<num>` as a placeholder for the reference number.
+  
+  ```yaml
+  autolinks:
+    - key_prefix: "TICKET-"
+      url_template: "https://tickets.example.com/view/<num>"
+  ```
+</ParamField>
+
+<ParamField path="is_alphanumeric" type="boolean" default="true">
+  Whether the reference ID is alphanumeric. When `true`, the reference can contain letters and numbers. When `false`, only numeric references are matched.
+  
+  ```yaml
+  autolinks:
+    - key_prefix: "DOC-"
+      url_template: "https://docs.example.com/<num>"
+      is_alphanumeric: true  # Matches DOC-123 and DOC-ABC123
+  ```
+</ParamField>
+
+## Complete Examples
+
+### JIRA Integration
+
+```yaml
+autolinks:
+  - key_prefix: "JIRA-"
+    url_template: "https://jira.example.com/browse/JIRA-<num>"
+    is_alphanumeric: false
+```
+
+With this configuration:
+- `JIRA-123` becomes a link to `https://jira.example.com/browse/JIRA-123`
+- `JIRA-456` becomes a link to `https://jira.example.com/browse/JIRA-456`
+
+### Linear Integration
+
+```yaml
+autolinks:
+  - key_prefix: "LIN-"
+    url_template: "https://linear.app/team/issue/LIN-<num>"
+    is_alphanumeric: true
+```
+
+### Multiple Autolinks
+
+```yaml
+autolinks:
+  - key_prefix: "JIRA-"
+    url_template: "https://jira.github.com/browse/JIRA-<num>"
+    is_alphanumeric: false
+  
+  - key_prefix: "MYLINK-"
+    url_template: "https://mywebsite.com/<num>"
+    is_alphanumeric: true
+  
+  - key_prefix: "TICKET-"
+    url_template: "https://tickets.example.com/view/<num>"
+    is_alphanumeric: false
+```
+
+### Different Issue Trackers
+
+```yaml
+autolinks:
+  # Jira
+  - key_prefix: "PROJ-"
+    url_template: "https://company.atlassian.net/browse/PROJ-<num>"
+    is_alphanumeric: false
+  
+  # Azure DevOps
+  - key_prefix: "AB#"
+    url_template: "https://dev.azure.com/org/project/_workitems/edit/<num>"
+    is_alphanumeric: false
+  
+  # ServiceNow
+  - key_prefix: "INC"
+    url_template: "https://instance.service-now.com/nav_to.do?uri=incident.do?sys_id=<num>"
+    is_alphanumeric: true
+  
+  # Zendesk
+  - key_prefix: "ZD-"
+    url_template: "https://company.zendesk.com/agent/tickets/<num>"
+    is_alphanumeric: false
+```
+
+## How Autolinks Work
+
+When you reference an autolink key prefix in:
+- Issue or PR titles
+- Issue or PR descriptions  
+- Issue or PR comments
+- Commit messages
+
+GitHub automatically creates a hyperlink using the URL template.
+
+### Example Usage
+
+With this configuration:
+
+```yaml
+autolinks:
+  - key_prefix: "JIRA-"
+    url_template: "https://jira.example.com/browse/JIRA-<num>"
+```
+
+When you write:
+
+```markdown
+fixes JIRA-123
+```
+
+GitHub automatically converts it to:
+
+```markdown
+fixes [JIRA-123](https://jira.example.com/browse/JIRA-123)
+```
+
+## Alphanumeric vs Numeric References
+
+### Numeric Only (`is_alphanumeric: false`)
+
+```yaml
+autolinks:
+  - key_prefix: "TICKET-"
+    url_template: "https://example.com/<num>"
+    is_alphanumeric: false
+```
+
+Matches:
+- `TICKET-123` ✓
+- `TICKET-456789` ✓
+
+Does not match:
+- `TICKET-ABC` ✗
+- `TICKET-12A` ✗
+
+### Alphanumeric (`is_alphanumeric: true`)
+
+```yaml
+autolinks:
+  - key_prefix: "REF-"
+    url_template: "https://example.com/<num>"
+    is_alphanumeric: true
+```
+
+Matches:
+- `REF-123` ✓
+- `REF-ABC` ✓
+- `REF-A1B2C3` ✓
+- `REF-456DEF` ✓
+
+## Best Practices
+
+1. **Use Unique Prefixes**: Ensure key prefixes are unique and won't conflict with common words
+   ```yaml
+   # Good
+   key_prefix: "JIRA-"
+   
+   # Avoid - too generic
+   key_prefix: "BUG-"
+   ```
+
+2. **Include Trailing Delimiter**: Include hyphens or other delimiters in the prefix
+   ```yaml
+   # Good - includes hyphen
+   key_prefix: "TICKET-"
+   
+   # Less clear
+   key_prefix: "TICKET"
+   ```
+
+3. **Match Your Issue Tracker Format**: Use `is_alphanumeric` based on your issue tracker's ID format
+   ```yaml
+   # Numeric IDs only
+   - key_prefix: "JIRA-"
+     is_alphanumeric: false
+   
+   # Alphanumeric IDs
+   - key_prefix: "DOC-"
+     is_alphanumeric: true
+   ```
+
+4. **Test URL Templates**: Verify that URL templates work by manually constructing a URL
+   ```yaml
+   # Test: https://jira.example.com/browse/JIRA-123
+   url_template: "https://jira.example.com/browse/JIRA-<num>"
+   ```
+
+## Common Issue Tracker Patterns
+
+### Jira
+
+```yaml
+autolinks:
+  - key_prefix: "PROJ-"
+    url_template: "https://company.atlassian.net/browse/PROJ-<num>"
+    is_alphanumeric: false
+```
+
+### Linear
+
+```yaml
+autolinks:
+  - key_prefix: "TEAM-"
+    url_template: "https://linear.app/company/issue/TEAM-<num>"
+    is_alphanumeric: true
+```
+
+### GitHub Issues (Different Org)
+
+```yaml
+autolinks:
+  - key_prefix: "EXT-"
+    url_template: "https://github.com/external-org/repo/issues/<num>"
+    is_alphanumeric: false
+```
+
+### Shortcut (formerly Clubhouse)
+
+```yaml
+autolinks:
+  - key_prefix: "sc-"
+    url_template: "https://app.shortcut.com/company/story/<num>"
+    is_alphanumeric: false
+```
+
+### Asana
+
+```yaml
+autolinks:
+  - key_prefix: "ASANA-"
+    url_template: "https://app.asana.com/0/project/<num>"
+    is_alphanumeric: true
+```
+
+## Updating Autolinks
+
+When an autolink with the same `key_prefix` already exists, Safe Settings will:
+1. Delete the existing autolink
+2. Create a new autolink with the updated configuration
+
+This happens automatically when you change the `url_template` or `is_alphanumeric` settings.
+
+## Removing Autolinks
+
+To remove an autolink, simply delete it from your configuration. Safe Settings will remove autolinks that are not defined in the settings.
+
+## Limitations
+
+- Autolinks only work with the `<num>` placeholder
+- Each repository can have a limited number of autolinks (typically 10)
+- Autolinks are matched case-sensitively
+- The key prefix must be unique within a repository
+
+## API Reference
+
+For more details, see GitHub's REST API documentation:
+- [Create an autolink reference](https://docs.github.com/en/rest/repos/autolinks#create-an-autolink-reference-for-a-repository)
+- [Delete an autolink reference](https://docs.github.com/en/rest/repos/autolinks#delete-an-autolink-reference-from-a-repository)
+- [Configuring autolinks](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/configuring-autolinks-to-reference-external-resources)

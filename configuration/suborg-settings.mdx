@@ -1,0 +1,545 @@
+---
+title: Sub-Organization Settings
+description: Group repositories and apply team-specific policies that override organization defaults
+---
+
+Sub-organizations (suborgs) allow you to group repositories and apply specific settings that override org-level defaults. This is useful for managing different teams, projects, or business units within your organization.
+
+## What is a SubOrg?
+
+A suborg is an arbitrary collection of repositories belonging to projects, business units, or teams. Suborg settings reside in YAML files in the `.github/suborgs/` folder of your admin repository.
+
+<Info>
+Suborgs provide a middle layer between organization-wide defaults and repository-specific settings, perfect for team-specific policies.
+</Info>
+
+## File Location
+
+```
+admin/
+└── .github/
+    └── suborgs/
+        ├── frontend-team.yml
+        ├── backend-team.yml
+        ├── security-critical.yml
+        └── mobile-team.yml
+```
+
+<Warning>
+The suborg directory structure (`.github/suborgs/`) cannot be customized. However, you can name your suborg files anything you want.
+</Warning>
+
+## Defining SubOrg Membership
+
+Repositories can belong to a suborg in three ways:
+
+### 1. By Repository Name
+
+Use `suborgrepos` to match repositories by name patterns using glob expressions:
+
+```yaml .github/suborgs/frontend-team.yml
+suborgrepos:
+  - web-*        # Matches: web-app, web-portal, web-dashboard
+  - ui-*         # Matches: ui-components, ui-library
+  - mobile-app   # Exact match
+  - "*-frontend" # Matches: shop-frontend, blog-frontend
+```
+
+<Accordion title="Glob pattern examples">
+- `api-*` - Matches all repos starting with `api-`
+- `*-service` - Matches all repos ending with `-service`
+- `core-*-service` - Matches repos like `core-auth-service`, `core-api-service`
+- `test` - Exact match only
+- Use `*` as a wildcard for any characters
+</Accordion>
+
+### 2. By Team Membership
+
+Use `suborgteams` to include all repositories that have specific teams as collaborators:
+
+```yaml .github/suborgs/backend-team.yml
+suborgteams:
+  - backend-engineers
+  - platform-team
+```
+
+Any repository that has these teams as collaborators will automatically be part of this suborg.
+
+### 3. By Custom Properties
+
+Use `suborgproperties` to include repositories with specific custom property values:
+
+```yaml .github/suborgs/security-critical.yml
+suborgproperties:
+  - criticality: high
+  - security-tier: 1
+  - EDP: true
+```
+
+Repositories with these custom properties will be included in the suborg.
+
+## Combining Membership Criteria
+
+You can combine multiple criteria in a single suborg configuration:
+
+```yaml .github/suborgs/platform-team.yml
+# Repositories can match by name pattern
+suborgrepos:
+  - platform-*
+  - core-*
+
+# OR by team membership
+suborgteams:
+  - platform-engineers
+  - sre-team
+
+# OR by custom properties
+suborgproperties:
+  - team: platform
+  - environment: shared
+
+# Settings for all matched repositories
+repository:
+  has_wiki: false
+  
+branches:
+  - name: default
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 2
+```
+
+<Warning>
+A repository can only belong to ONE suborg. If a repository matches multiple suborg configurations, Safe Settings will throw an error:
+
+```
+Multiple suborg configs for <repo-name> in <path1> and <path2>
+```
+
+Ensure your suborg definitions don't overlap.
+</Warning>
+
+## Overriding Org Settings
+
+Suborg settings override org-level settings but can be overridden by repo-level settings. You can override any setting that's available at the org level:
+
+<CodeGroup>
+```yaml Org Level
+# .github/settings.yml
+repository:
+  private: true
+  has_issues: true
+  has_wiki: true
+
+branches:
+  - name: default
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 1
+
+teams:
+  - name: core
+    permission: admin
+```
+
+```yaml SubOrg Level
+# .github/suborgs/backend-team.yml
+suborgrepos:
+  - api-*
+  - service-*
+
+# Override: Backend repos don't use wikis
+repository:
+  has_wiki: false
+
+# Override: Backend requires 2 reviewers
+branches:
+  - name: default
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 2
+        require_code_owner_reviews: true
+
+# Add: Backend-specific team
+teams:
+  - name: backend-team
+    permission: push
+```
+
+```yaml Result for api-gateway repo
+# Final merged configuration
+repository:
+  private: true          # From org
+  has_issues: true       # From org
+  has_wiki: false        # From suborg (overridden)
+
+branches:
+  - name: default
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 2      # From suborg
+        require_code_owner_reviews: true        # From suborg
+
+teams:
+  - name: core           # From org
+    permission: admin
+  - name: backend-team   # From suborg (added)
+    permission: push
+```
+</CodeGroup>
+
+## Complete SubOrg Examples
+
+<Tabs>
+  <Tab title="Frontend Team">
+    ```yaml .github/suborgs/frontend-team.yml
+    # Match repositories by name
+    suborgrepos:
+      - web-*
+      - ui-*
+      - "*-frontend"
+    
+    repository:
+      has_wiki: false
+      topics:
+        - frontend
+        - react
+    
+    branches:
+      - name: default
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 1
+            require_code_owner_reviews: true
+          required_status_checks:
+            strict: true
+            contexts:
+              - "CI/lint"
+              - "CI/test"
+              - "CI/build"
+    
+    teams:
+      - name: frontend-developers
+        permission: push
+      - name: ux-team
+        permission: pull
+    
+    labels:
+      include:
+        - name: frontend
+          color: "#1d76db"
+        - name: ui-bug
+          color: "#d73a4a"
+    ```
+  </Tab>
+  
+  <Tab title="Backend Team">
+    ```yaml .github/suborgs/backend-team.yml
+    # Match by team membership
+    suborgteams:
+      - backend-engineers
+      - platform-team
+    
+    repository:
+      has_projects: false
+      topics:
+        - backend
+        - api
+    
+    branches:
+      - name: default
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 2
+            require_code_owner_reviews: true
+            dismiss_stale_reviews: true
+          required_status_checks:
+            strict: true
+            contexts:
+              - "CI/test"
+              - "CI/integration-test"
+              - "security/scan"
+          enforce_admins: true
+    
+    teams:
+      - name: backend-team
+        permission: push
+      - name: sre-team
+        permission: admin
+    
+    custom_properties:
+      - name: backend-service
+        value: "true"
+    ```
+  </Tab>
+  
+  <Tab title="Security Critical">
+    ```yaml .github/suborgs/security-critical.yml
+    # Match by custom properties
+    suborgproperties:
+      - criticality: high
+      - security-tier: 1
+    
+    repository:
+      private: true
+      has_wiki: false
+      has_projects: false
+      security:
+        enableVulnerabilityAlerts: true
+        enableAutomatedSecurityFixes: true
+    
+    branches:
+      - name: default
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 3
+            require_code_owner_reviews: true
+            dismiss_stale_reviews: true
+            require_last_push_approval: true
+          required_status_checks:
+            strict: true
+            contexts:
+              - "security/sast"
+              - "security/dependency-scan"
+              - "security/secret-scan"
+              - "CI/test"
+          enforce_admins: true
+          restrictions:
+            teams:
+              - security-team
+              - senior-engineers
+    
+    teams:
+      - name: security-team
+        permission: admin
+    
+    labels:
+      include:
+        - name: security
+          color: "#FF0000"
+          description: Security-related issue
+    ```
+  </Tab>
+  
+  <Tab title="Mobile Team">
+    ```yaml .github/suborgs/mobile-team.yml
+    # Match by repo name pattern
+    suborgrepos:
+      - mobile-*
+      - "*-app"
+    
+    # Also match by team
+    suborgteams:
+      - mobile-developers
+    
+    repository:
+      has_wiki: true  # Mobile team uses wikis for release notes
+      topics:
+        - mobile
+        - ios
+        - android
+    
+    branches:
+      - name: default
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 2
+            require_code_owner_reviews: true
+          required_status_checks:
+            strict: true
+            contexts:
+              - "CI/ios-build"
+              - "CI/android-build"
+              - "CI/test"
+    
+      # Additional branch protection for release branches
+      - name: "release/*"
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 3
+            require_code_owner_reviews: true
+            dismiss_stale_reviews: true
+          enforce_admins: true
+    
+    teams:
+      - name: mobile-developers
+        permission: push
+      - name: qa-mobile
+        permission: pull
+    
+    milestones:
+      - title: App Store Release
+        description: Features for next app store release
+        state: open
+    ```
+  </Tab>
+</Tabs>
+
+## Scoping Settings to Repos
+
+Just like at the org level, you can scope teams, collaborators, and labels to specific repositories within the suborg:
+
+```yaml .github/suborgs/platform-team.yml
+suborgrepos:
+  - platform-*
+  - infrastructure-*
+
+teams:
+  # Applied to all repos in suborg
+  - name: platform-team
+    permission: admin
+  
+  # Only applied to repos matching the pattern
+  - name: kubernetes-experts
+    permission: push
+    include:
+      - "*-k8s"
+      - "*-infrastructure"
+  
+  # Applied to all repos except these
+  - name: junior-engineers
+    permission: pull
+    exclude:
+      - "*-production"
+      - "*-critical"
+```
+
+## Rulesets in SubOrgs
+
+Suborgs can define rulesets, but they cannot use the `repository_name` condition (that's org-level only):
+
+```yaml .github/suborgs/backend-team.yml
+suborgrepos:
+  - api-*
+  - service-*
+
+rulesets:
+  - name: Backend Standards
+    target: branch
+    enforcement: active
+    
+    bypass_actors:
+      - actor_id: 5
+        actor_type: Team
+        bypass_mode: pull_request
+    
+    conditions:
+      ref_name:
+        include: ["~DEFAULT_BRANCH", "release/*"]
+        exclude: ["staging"]
+      # Note: repository_name is NOT allowed here
+    
+    rules:
+      - type: required_signatures
+      
+      - type: pull_request
+        parameters:
+          required_approving_review_count: 2
+          require_code_owner_review: true
+      
+      - type: commit_message_pattern
+        parameters:
+          operator: regex
+          pattern: "^(feat|fix|docs|chore|refactor):"
+```
+
+<Note>
+When a suborg and repo-level ruleset have the same name, their rules are merged. Be careful not to define the same rule type in both levels as GitHub will reject it.
+</Note>
+
+## When Changes Are Applied
+
+Suborg settings are applied in the following scenarios:
+
+1. **New Repository Created** - If the new repo matches a suborg, settings are applied immediately
+2. **SubOrg Config Modified** - When you modify a suborg YAML file, all matching repos are updated
+3. **Org Settings Modified** - When org settings change, the merged config (org + suborg) is applied
+4. **Repository Joins SubOrg** - When a repo starts matching suborg criteria (e.g., team added, custom property set)
+
+<Accordion title="What happens when a repo joins or leaves a suborg?">
+**Joining a SubOrg:**
+When a repository starts matching a suborg's criteria (e.g., renamed to match pattern, team added, custom property set), the suborg settings are automatically applied on the next sync.
+
+**Leaving a SubOrg:**
+If a repository no longer matches any suborg criteria, it will use only org-level settings. Previously applied suborg settings are not automatically removed, but will be overwritten by org-level settings on the next sync.
+</Accordion>
+
+<Accordion title="How do I test suborg settings before applying?">
+Create a pull request with your suborg changes. Safe Settings will run in dry-run mode and show you exactly what would change without actually applying anything. Check the PR comments and check run for details.
+</Accordion>
+
+<Accordion title="Can a repository belong to multiple suborgs?">
+No. If Safe Settings detects that a repository matches multiple suborg configurations, it will throw an error:
+
+```
+Multiple suborg configs for <repo-name> in <path1> and <path2>
+```
+
+You need to adjust your suborg definitions to ensure they don't overlap.
+</Accordion>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Descriptive Names" icon="tag">
+    Name your suborg files after the team or purpose (e.g., `frontend-team.yml`, `security-critical.yml`, `mobile-apps.yml`).
+  </Card>
+  
+  <Card title="Avoid Overlaps" icon="circle-xmark">
+    Ensure repository matching criteria don't overlap between suborgs. A repo can only belong to one suborg.
+  </Card>
+  
+  <Card title="Use CODEOWNERS" icon="users">
+    Use CODEOWNERS to ensure the right team approves changes to their suborg configuration:
+    ```
+    .github/suborgs/frontend-team.yml @org/frontend-team
+    .github/suborgs/backend-team.yml @org/backend-team
+    ```
+  </Card>
+  
+  <Card title="Document Membership" icon="file-lines">
+    Add comments to explain why certain repos are grouped together and what policies apply.
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="My suborg settings aren't being applied">
+    Check:
+    1. Is the repository actually matching your suborg criteria? Check repo name patterns, team membership, or custom properties.
+    2. Is there a repo-specific config overriding the suborg settings?
+    3. Check the Safe Settings check run in the admin repo for errors.
+  </Accordion>
+  
+  <Accordion title="Getting 'Multiple suborg configs' error">
+    This means a repository matches multiple suborg configurations. Review your suborg files and ensure the matching criteria (repo patterns, teams, properties) don't overlap.
+  </Accordion>
+  
+  <Accordion title="How do I see which repos belong to a suborg?">
+    Safe Settings doesn't provide a direct query. However, you can:
+    1. Check your suborg YAML file for the matching criteria
+    2. Use GitHub API or CLI to find repos matching your patterns
+    3. Review the Safe Settings logs or check runs when the suborg config is applied
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Repo Settings" icon="file-code" href="/configuration/repo-settings">
+    Override settings for individual repositories
+  </Card>
+  
+  <Card title="Configuration Hierarchy" icon="sitemap" href="/configuration/hierarchy">
+    Learn how settings are merged
+  </Card>
+  
+  <Card title="Deployment Settings" icon="gear" href="/configuration/deployment-settings">
+    Configure validators and restrictions
+  </Card>
+  
+  <Card title="Sample SubOrg" icon="file" href="https://github.com/github/safe-settings/blob/main/docs/sample-settings/suborg.yml">
+    View sample suborg file
+  </Card>
+</CardGroup>

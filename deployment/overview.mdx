@@ -1,0 +1,193 @@
+---
+title: Deployment Overview
+description: Learn how to deploy Safe Settings across different environments and platforms
+---
+
+Safe Settings can be deployed in various environments to suit your infrastructure needs. Choose the deployment method that best fits your organization's requirements.
+
+## Deployment Methods
+
+Safe Settings supports multiple deployment options:
+
+- **Docker** - Containerized deployment for local or cloud environments
+- **AWS Lambda** - Serverless deployment with automatic scaling
+- **Kubernetes** - Production-grade orchestration with Helm charts
+- **GitHub Actions** - Scheduled sync operations without infrastructure
+
+## Prerequisites
+
+Before deploying Safe Settings, ensure you have:
+
+1. **GitHub App** created with proper permissions
+2. **Node.js 18.x or later** (Node.js 20.x LTS recommended)
+3. **Environment variables** configured
+4. **Admin repository** set up in your organization
+
+## Required Environment Variables
+
+All deployment methods require these core environment variables:
+
+<Note>
+`PRIVATE_KEY` takes precedence over `PRIVATE_KEY_PATH`. Use `PRIVATE_KEY` (base64 encoded) for containerized deployments.
+</Note>
+
+### Core Variables
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `APP_ID` | GitHub App ID from app settings page | Yes |
+| `WEBHOOK_SECRET` | Webhook secret generated during app creation | Yes |
+| `PRIVATE_KEY` | Base64 encoded private key contents | Yes* |
+| `PRIVATE_KEY_PATH` | Path to private key file | Yes* |
+
+\* Either `PRIVATE_KEY` or `PRIVATE_KEY_PATH` is required
+
+### Optional Variables
+
+| Variable | Description | Default |
+|----------|-------------|----------|
+| `ADMIN_REPO` | Repository containing configuration files | `admin` |
+| `CONFIG_PATH` | Path to configuration directory | `.github` |
+| `SETTINGS_FILE_PATH` | Settings file name | `settings.yml` |
+| `DEPLOYMENT_CONFIG_FILE` | Deployment settings file path | `deployment-settings.yml` |
+| `LOG_LEVEL` | Logging level (trace, debug, info, warn, error) | `info` |
+| `CRON` | Cron schedule for periodic sync | - |
+| `ENABLE_PR_COMMENT` | Enable PR comments with validation results | `true` |
+| `BLOCK_REPO_RENAME_BY_HUMAN` | Block manual repository renaming | `false` |
+| `GHE_HOST` | GitHub Enterprise Server hostname | - |
+| `GH_ORG` | Organization name for manifest flow setup | - |
+| `WEBHOOK_PROXY_URL` | SMEE URL for local testing | - |
+| `NODE_TLS_REJECT_UNAUTHORIZED` | Disable SSL validation (use with caution) | `1` |
+
+## Environment-Specific Variables
+
+### GitHub Enterprise Server
+
+```bash
+GHE_HOST=github.mycompany.com
+```
+
+### Scheduled Sync
+
+```bash
+# Run every hour
+CRON='0 * * * *'
+
+# Cron format:
+# ┌────────────── second (optional)
+# │ ┌──────────── minute
+# │ │ ┌────────── hour
+# │ │ │ ┌──────── day of month
+# │ │ │ │ ┌────── month
+# │ │ │ │ │ ┌──── day of week
+# * * * * * *
+```
+
+### Local Development
+
+```bash
+WEBHOOK_PROXY_URL=https://smee.io/your-channel
+LOG_LEVEL=trace
+```
+
+## Deployment Checklist
+
+Before deploying, ensure you've completed these steps:
+
+<Steps>
+
+### Create GitHub App
+
+Create a GitHub App with the required permissions and download the private key.
+
+[Learn how to create a GitHub App →](/deployment/github-app)
+
+### Prepare Environment Variables
+
+Set up your `.env` file or environment configuration:
+
+```bash
+cp .env.example .env
+```
+
+Update with your app credentials:
+
+```bash
+APP_ID=123456
+WEBHOOK_SECRET=your-webhook-secret
+PRIVATE_KEY="$(cat private-key.pem | base64)"
+```
+
+### Choose Deployment Method
+
+Select the deployment method that fits your infrastructure:
+
+- [Docker](/deployment/docker) - Quick start with containers
+- [AWS Lambda](/deployment/aws-lambda) - Serverless with auto-scaling
+- [Kubernetes](/deployment/kubernetes) - Production orchestration
+- [GitHub Actions](/deployment/github-actions) - No infrastructure needed
+
+### Install GitHub App
+
+Install the GitHub App in your organization for all repositories.
+
+<Warning>
+Safe Settings must be installed for **all repositories** in your organization to function correctly.
+</Warning>
+
+</Steps>
+
+## Deployment Architecture
+
+Safe Settings can be deployed in two modes:
+
+### Webhook Mode
+
+Responds to GitHub webhook events in real-time:
+- Repository created
+- Settings modified
+- Branch protection changed
+- Pull requests opened
+
+### Scheduled Mode
+
+Runs on a schedule to prevent configuration drift:
+- Periodic sync using CRON
+- AWS Lambda with EventBridge
+- GitHub Actions scheduled workflow
+
+<Note>
+For production deployments, use both webhook and scheduled modes to ensure settings are always in sync.
+</Note>
+
+## Next Steps
+
+Choose your deployment method:
+
+<CardGroup cols={2}>
+
+<Card title="Docker" icon="docker" href="/deployment/docker">
+  Quick containerized deployment
+</Card>
+
+<Card title="AWS Lambda" icon="aws" href="/deployment/aws-lambda">
+  Serverless with auto-scaling
+</Card>
+
+<Card title="Kubernetes" icon="dharmachakra" href="/deployment/kubernetes">
+  Production orchestration
+</Card>
+
+<Card title="GitHub Actions" icon="github" href="/deployment/github-actions">
+  No infrastructure required
+</Card>
+
+</CardGroup>
+
+## Support
+
+For deployment issues:
+- Check the logs with `LOG_LEVEL=debug`
+- Verify environment variables are set correctly
+- Ensure GitHub App has proper permissions
+- Review webhook delivery in GitHub App settings

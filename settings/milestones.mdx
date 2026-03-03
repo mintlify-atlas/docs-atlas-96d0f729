@@ -1,0 +1,300 @@
+---
+title: Milestones
+description: Configure milestones for tracking issues and pull requests
+---
+
+The `milestones` section configures milestones for repositories. Milestones help track progress on groups of issues and pull requests.
+
+## Basic Configuration
+
+<ParamField path="title" type="string" required>
+  The title of the milestone. This is used to identify the milestone and must be unique within the repository.
+  
+  ```yaml
+  milestones:
+    - title: v1.0.0
+  ```
+</ParamField>
+
+<ParamField path="description" type="string">
+  A description of the milestone explaining its purpose or goals.
+  
+  ```yaml
+  milestones:
+    - title: v1.0.0
+      description: Initial release with core features
+  ```
+</ParamField>
+
+<ParamField path="state" type="string">
+  The state of the milestone. Can be:
+  - `open` - The milestone is active and accepting issues
+  - `closed` - The milestone is complete
+  
+  ```yaml
+  milestones:
+    - title: v1.0.0
+      description: Initial release
+      state: open
+  ```
+</ParamField>
+
+## Complete Examples
+
+### Basic Milestone
+
+```yaml
+milestones:
+  - title: Q1 2024
+    description: First quarter goals
+    state: open
+```
+
+### Multiple Milestones
+
+```yaml
+milestones:
+  - title: v1.0.0
+    description: Initial release with core features
+    state: closed
+  
+  - title: v1.1.0
+    description: Performance improvements and bug fixes
+    state: closed
+  
+  - title: v2.0.0
+    description: Major refactoring and new features
+    state: open
+```
+
+### Release Milestones
+
+```yaml
+milestones:
+  - title: v2.0.0-alpha
+    description: Alpha release for testing
+    state: closed
+  
+  - title: v2.0.0-beta
+    description: Beta release for broader testing
+    state: closed
+  
+  - title: v2.0.0-rc1
+    description: Release candidate
+    state: open
+  
+  - title: v2.0.0
+    description: Production release
+    state: open
+```
+
+### Quarter-Based Milestones
+
+```yaml
+milestones:
+  - title: Q4 2023
+    description: Fourth quarter 2023 deliverables
+    state: closed
+  
+  - title: Q1 2024
+    description: First quarter 2024 deliverables
+    state: closed
+  
+  - title: Q2 2024
+    description: Second quarter 2024 deliverables
+    state: open
+```
+
+### Sprint Milestones
+
+```yaml
+milestones:
+  - title: Sprint 23
+    description: Two-week sprint ending March 15
+    state: closed
+  
+  - title: Sprint 24
+    description: Two-week sprint ending March 29
+    state: open
+  
+  - title: Sprint 25
+    description: Two-week sprint ending April 12
+    state: open
+```
+
+## Milestone Management
+
+### Creating Milestones
+
+Safe Settings will create milestones that don't exist in the repository:
+
+```yaml
+milestones:
+  - title: New Feature Set
+    description: Collection of new features for next release
+    state: open
+```
+
+### Updating Milestones
+
+Safe Settings updates milestones when the description or state changes:
+
+```yaml
+milestones:
+  - title: v1.0.0
+    description: Updated description
+    state: closed  # Changed from open to closed
+```
+
+### Deleting Milestones
+
+Milestones not defined in your configuration will be removed from the repository. To keep a milestone, include it in your configuration.
+
+## Due Dates
+
+Note: The `due_on` field is intentionally not supported by Safe Settings. Due dates are excluded from configuration management to allow flexible scheduling without requiring settings updates.
+
+If you need to set due dates, do so manually through the GitHub UI or API.
+
+## Using Milestones
+
+Once configured, milestones can be:
+
+### Assigned to Issues
+
+```bash
+gh issue create --title "New feature" --milestone "v1.0.0"
+```
+
+### Assigned to Pull Requests
+
+```bash
+gh pr create --title "Fix bug" --milestone "v1.0.0"
+```
+
+### Viewed in GitHub
+
+- Navigate to the repository
+- Click "Issues" or "Pull requests"
+- Click "Milestones" to see progress
+
+## Best Practices
+
+1. **Use Consistent Naming**: Establish a naming convention for milestones
+   ```yaml
+   # Version-based
+   milestones:
+     - title: v1.0.0
+     - title: v1.1.0
+   
+   # Time-based
+   milestones:
+     - title: 2024-Q1
+     - title: 2024-Q2
+   ```
+
+2. **Close Completed Milestones**: Update the state when work is complete
+   ```yaml
+   milestones:
+     - title: v1.0.0
+       state: closed  # Work is complete
+   ```
+
+3. **Provide Meaningful Descriptions**: Help team members understand the milestone's purpose
+   ```yaml
+   milestones:
+     - title: Security Hardening
+       description: Address security vulnerabilities and improve authentication
+   ```
+
+4. **Plan Ahead**: Create upcoming milestones to help with planning
+   ```yaml
+   milestones:
+     - title: Current Sprint
+       state: open
+     
+     - title: Next Sprint
+       state: open
+     
+     - title: Future Work
+       state: open
+   ```
+
+## Common Patterns
+
+### Semantic Versioning
+
+```yaml
+milestones:
+  - title: v1.0.0
+    description: Major release - Initial stable version
+    state: closed
+  
+  - title: v1.1.0
+    description: Minor release - New features, backward compatible
+    state: open
+  
+  - title: v1.1.1
+    description: Patch release - Bug fixes only
+    state: open
+```
+
+### Release Train
+
+```yaml
+milestones:
+  - title: 2024.1
+    description: January 2024 release
+    state: closed
+  
+  - title: 2024.2
+    description: February 2024 release
+    state: open
+  
+  - title: 2024.3
+    description: March 2024 release
+    state: open
+```
+
+### Epic-Based
+
+```yaml
+milestones:
+  - title: User Authentication
+    description: Complete user authentication system
+    state: open
+  
+  - title: Payment Integration
+    description: Integrate payment processing
+    state: open
+  
+  - title: Admin Dashboard
+    description: Build administrative interface
+    state: open
+```
+
+## Viewing Milestone Progress
+
+In the GitHub UI, milestones show:
+- Number of open issues
+- Number of closed issues  
+- Percentage complete
+- Due date (if set manually)
+
+This helps track progress toward milestone completion.
+
+## Integration with Project Boards
+
+Milestones can be used alongside GitHub Projects for enhanced project management:
+
+1. Filter project boards by milestone
+2. Track milestone progress across multiple repositories
+3. Link milestones to project timelines
+
+## API Reference
+
+For more details, see GitHub's REST API documentation:
+- [Create a milestone](https://docs.github.com/en/rest/issues/milestones#create-a-milestone)
+- [Update a milestone](https://docs.github.com/en/rest/issues/milestones#update-a-milestone)
+- [Delete a milestone](https://docs.github.com/en/rest/issues/milestones#delete-a-milestone)
+- [List milestones](https://docs.github.com/en/rest/issues/milestones#list-milestones)

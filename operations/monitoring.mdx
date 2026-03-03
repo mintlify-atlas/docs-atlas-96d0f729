@@ -1,0 +1,592 @@
+---
+title: Monitoring and Observability
+description: Monitor Safe Settings operations, track configuration changes, and ensure continuous compliance through check runs and logging
+---
+
+Safe Settings provides comprehensive monitoring capabilities through GitHub check runs, detailed logging, and PR validation feedback. This allows you to track all configuration changes, identify errors quickly, and ensure your organization remains compliant.
+
+## Check Runs
+
+Safe Settings creates check runs in the admin repository to provide visibility into every sync operation.
+
+### Check Run Types
+
+#### Safe-Settings Check Run
+
+Created after every sync operation (webhook-triggered or scheduled).
+
+**Location:** Admin repository, latest commit on default branch
+
+**Name:** "Safe-Settings"
+
+**Information provided:**
+- Execution timestamp
+- Success or failure status
+- List of errors (if any)
+- Repositories processed
+- Configuration changes applied
+
+**Source:** `lib/settings.js:129-174`
+
+#### Safe-Setting Validator Check Run
+
+Created for pull request validation in the admin repository.
+
+**Location:** PR branch in admin repository
+
+**Name:** "Safe-setting validator"
+
+**Information provided:**
+- Validation results (pass/fail)
+- Dry-run simulation output
+- Proposed changes by repository
+- Validation errors
+- Custom validator results
+
+**Source:** `index.js:199-209` and `index.js:541-613`
+
+### Check Run Lifecycle
+
+<Steps>
+
+### Check created
+
+Check run is created with status "queued" (for PR validation).
+
+**Source:** `index.js:202-208`
+
+```javascript
+const res = await context.octokit.checks.create({
+  owner: payload.repository.owner.login,
+  repo: payload.repository.name,
+  name: 'Safe-setting validator',
+  head_sha
+})
+```
+
+### In progress (PR validation only)
+
+Status updated to "in_progress" with initial output.
+
+**Source:** `index.js:571-580`
+
+```javascript
+let params = {
+  owner: payload.repository.owner.login,
+  repo: payload.repository.name,
+  check_run_id: payload.check_run.id,
+  status: 'in_progress',
+  started_at: new Date().toISOString(),
+  output: { title: 'Starting NOP', summary: 'initiating...' }
+}
+await context.octokit.checks.update(params)
+```
+
+### Processing
+
+Safe Settings executes configuration sync or validation.
+
+### Completed
+
+Check run updated with final status:
+- **Status:** "completed"
+- **Conclusion:** "success" or "failure"
+- **Output:** Detailed results
+
+**Source:** `lib/settings.js:296-310`
+
+```javascript
+const params = {
+  owner: payload.repository.owner.login,
+  repo: payload.repository.name,
+  check_run_id: payload.check_run.id,
+  status: 'completed',
+  conclusion: error ? 'failure' : 'success',
+  completed_at: new Date().toISOString(),
+  output: {
+    title: error ? 'Safe-Settings Dry-Run Finished with Error' : 'Safe-Settings Dry-Run Finished with success',
+    summary: renderedCommentMessage
+  }
+}
+```
+
+</Steps>
+
+### Viewing Check Runs
+
+<AccordionGroup>
+
+<Accordion title="Via GitHub UI">
+1. Navigate to your admin repository
+2. Click on the "Commits" tab
+3. Click on the ✓ or ✗ icon next to a commit
+4. Select the "Safe-Settings" or "Safe-setting validator" check
+5. View detailed output
+</Accordion>
+
+<Accordion title="Via Pull Requests">
+1. Open a pull request in the admin repository
+2. Scroll to the "Checks" section at the bottom
+3. Click on "Safe-setting validator"
+4. View validation results and proposed changes
+</Accordion>
+
+<Accordion title="Via GitHub API">
+```bash
+gh api repos/{owner}/{admin-repo}/commits/{sha}/check-runs
+```
+</Accordion>
+
+</AccordionGroup>
+
+### Check Run Output Examples
+
+#### Successful Sync
+
+```
+Title: Safe-Settings
+Status: ✓ Success
+Summary: Safe-Settings finished successfully.
+
+Run on: 2024-03-15T10:30:00Z
+
+Repositories processed: 45
+Changes applied: 12
+Errors: 0
+```
+
+#### Failed Sync
+
+```
+Title: Safe-Settings
+Status: ✗ Failure
+Summary: Safe-Settings finished with errors.
+
+Errors:
+- Repository: api-service
+  Plugin: branches
+  Error: Branch protection could not be applied
+  Details: Insufficient permissions to update branch protection
+
+- Repository: web-app
+  Plugin: collaborators
+  Error: User not found
+  Details: Collaborator 'john-doe' does not exist
+```
+
+**Source:** `README.md:442-452`
+
+#### PR Validation Output
+
+```
+Title: Safe-Settings Dry-Run Finished with success
+Status: ✓ Success
+
+Configuration changes detected:
+
+| Plugin | Repo | Additions | Modifications |
+|--------|------|-----------|---------------|
+| branches | api-service | Branch 'develop' protection | required_approving_review_count: 1→2 |
+| teams | web-app | Team 'frontend-devs' | permission: pull→push |
+| labels | core-lib | Label 'enhancement' | color: blue→green |
+
+Affected repositories: 3
+Total changes: 4
+```
+
+**Source:** `README.md:427-439`
+
+### Check Run Limitations
+
+<Warning>
+Check run output is limited to 65,535 characters. For large organizations with many changes, output may be truncated with the message "(too many changes to report)".
+</Warning>
+
+**Source:** `lib/settings.js:161`
+
+```javascript
+text: details.length > 55536 
+  ? `${details.substring(0, 55536)}... (too many changes to report)` 
+  : details
+```
+
+## PR Comments
+
+When `ENABLE_PR_COMMENT=true`, Safe Settings posts detailed comments on pull requests in the admin repository.
+
+### Comment Structure
+
+**Source:** `lib/settings.js:262-294`
+
+```markdown
+#### :robot: Safe-Settings config changes detected:
+
+| Msg | Plugin | Repo | Additions | Deletions | Modifications |
+|-----|--------|------|-----------|-----------|---------------|
+| ✋  | teams | my-repo | {"name":"dev-team"} | null | {"permission":"push"} |
+| ✋  | branches | api-service | null | null | {"required_approving_review_count":2} |
+| ❗  | labels | web-app | null | null | Error: Invalid color format |
+```
+
+### Enabling PR Comments
+
+```bash .env
+ENABLE_PR_COMMENT=true
+```
+
+**Source:** `README.md:544-547`
+
+### Comment Features
+
+- **Visual indicators:** ✋ for changes, ❗ for errors
+- **Grouped by plugin:** Organized by configuration type
+- **JSON details:** Shows exact changes in JSON format
+- **Size-limited:** Truncated if exceeds 65,535 characters
+
+**Source:** `lib/settings.js:262-294`
+
+## Logging
+
+Safe Settings uses Probot's logging system to provide detailed operational logs.
+
+### Log Levels
+
+Configure logging verbosity with the `LOG_LEVEL` environment variable:
+
+| Level | Description | Use Case |
+|-------|-------------|----------|
+| `error` | Only errors | Production (minimal logs) |
+| `warn` | Warnings and errors | Production (standard) |
+| `info` | Informational messages | Production (recommended) |
+| `debug` | Detailed debugging info | Troubleshooting |
+| `trace` | Maximum verbosity | Development/debugging |
+
+**Source:** `README.md:524-527`
+
+```bash .env
+LOG_LEVEL=info  # Recommended for production
+```
+
+### What Gets Logged
+
+#### Info Level
+
+- Webhook events received
+- Repositories processed
+- Configuration files loaded
+- Sync operations started/completed
+
+#### Debug Level
+
+- Configuration merge details
+- API endpoint calls
+- Validation results
+- Bot detection logic
+- Repository filtering decisions
+
+**Source:** Throughout `index.js` and `lib/settings.js`
+
+```javascript
+robot.log.debug(`deploymentConfig is ${JSON.stringify(deploymentConfig)}`)
+robot.log.debug(`config for ref ${ref} is ${JSON.stringify(config)}`)
+robot.log.debug('Branch Protection edited by a Human')
+```
+
+#### Error Level
+
+- Configuration loading failures
+- API errors
+- Validation failures
+- Check run creation failures
+
+**Source:** `lib/settings.js:176-184`
+
+```javascript
+logError (msg) {
+  this.log.error(msg)
+  this.errors.push({
+    owner: this.repo.owner,
+    repo: this.repo.repo,
+    msg,
+    plugin: this.constructor.name
+  })
+}
+```
+
+### Log Examples
+
+#### Webhook Event Processing
+
+```
+[INFO] Webhook received: push event from admin repository
+[DEBUG] Changes in '.github/settings.yml' detected, doing a full synch...
+[DEBUG] deploymentConfig is {"restrictedRepos":["admin","safe-settings"]}
+[DEBUG] Fetching repositories
+[INFO] Processing 42 repositories
+[DEBUG] Skipping restricted repo: admin
+[DEBUG] found a matching repoconfig for this repo {"name":"api-service"}
+[INFO] Safe-Settings finished successfully
+```
+
+#### Validation During PR
+
+```
+[DEBUG] Pull_request opened !
+[DEBUG] Is Admin repo event true
+[DEBUG] Check run was created!
+[DEBUG] Updating check run {"check_run_id":12345,"status":"in_progress"}
+[DEBUG] Changes in '.github/repos/api-service.yml' detected
+[DEBUG] Running in NOP mode
+[DEBUG] Calling overridevalidator for key branches
+[INFO] Validation passed for api-service
+[DEBUG] Completing check run {"conclusion":"success"}
+```
+
+## Monitoring Best Practices
+
+<AccordionGroup>
+
+<Accordion title="Set up notifications for failed check runs">
+Configure GitHub to notify you when check runs fail:
+
+1. Go to admin repository settings
+2. Enable branch protection on default branch
+3. Require "Safe-Settings" check to pass
+4. Set up email/Slack notifications for failed checks
+</Accordion>
+
+<Accordion title="Regularly review check run history">
+Establish a routine to review:
+- Frequency of failures
+- Common error patterns
+- Repositories frequently requiring resync
+- Performance trends
+</Accordion>
+
+<Accordion title="Monitor API rate limits">
+Watch for rate limiting issues:
+
+```bash
+# Check rate limit status
+gh api rate_limit
+```
+
+Adjust CRON frequency if approaching limits.
+</Accordion>
+
+<Accordion title="Enable PR comments for transparency">
+Set `ENABLE_PR_COMMENT=true` to:
+- Provide visibility to all team members
+- Document what changes will occur
+- Enable review before merging
+- Create audit trail of changes
+</Accordion>
+
+<Accordion title="Use appropriate log levels">
+- **Production:** `info` or `warn`
+- **Troubleshooting:** `debug`
+- **Development:** `trace`
+
+Avoid `trace` in production due to log volume.
+</Accordion>
+
+<Accordion title="Archive logs for compliance">
+If your organization requires audit trails:
+- Configure log retention policies
+- Export logs to external systems (Splunk, ELK, etc.)
+- Store check run history
+- Document configuration changes
+</Accordion>
+
+</AccordionGroup>
+
+## Metrics to Monitor
+
+### Operational Metrics
+
+<CardGroup cols={2}>
+
+<Card title="Sync Success Rate" icon="chart-line">
+Percentage of successful sync operations vs. failures.
+
+**Target:** > 95%
+
+**Monitor via:** Check run conclusions
+</Card>
+
+<Card title="Processing Time" icon="clock">
+Time taken to complete full sync operations.
+
+**Target:** < 30 minutes for 1000 repos
+
+**Monitor via:** Check run timestamps
+</Card>
+
+<Card title="Error Frequency" icon="triangle-exclamation">
+Number of errors per day/week.
+
+**Target:** < 5 per day
+
+**Monitor via:** Check run failures
+</Card>
+
+<Card title="Affected Repositories" icon="code-branch">
+Number of repositories requiring changes per sync.
+
+**Target:** Decreasing over time
+
+**Monitor via:** Check run summaries
+</Card>
+
+</CardGroup>
+
+### Configuration Metrics
+
+- **Configuration drift rate:** How often manual changes are reverted
+- **Validation failure rate:** PR validations that fail
+- **Merge frequency:** How often configuration PRs are merged
+- **Time to merge:** Duration from PR creation to merge
+
+## Advanced Monitoring
+
+### External Monitoring Integration
+
+Integrate Safe Settings with external monitoring tools:
+
+#### Webhook Forwarding
+
+Configure GitHub to send check run webhooks to monitoring systems:
+
+```yaml
+# GitHub webhook configuration
+Events:
+  - check_run
+Payload URL: https://your-monitoring-system.com/webhooks/github
+```
+
+#### Log Aggregation
+
+Forward logs to centralized logging:
+
+```javascript
+// Example: Winston integration
+const winston = require('winston')
+
+const logger = winston.createLogger({
+  transports: [
+    new winston.transports.File({ filename: 'safe-settings.log' }),
+    new winston.transports.Http({ 
+      host: 'log-aggregator.example.com',
+      port: 8080 
+    })
+  ]
+})
+```
+
+#### Prometheus Metrics
+
+Expose metrics for Prometheus:
+
+```javascript
+// Example: Custom metrics
+const promClient = require('prom-client')
+
+const syncCounter = new promClient.Counter({
+  name: 'safe_settings_syncs_total',
+  help: 'Total number of sync operations'
+})
+
+const errorCounter = new promClient.Counter({
+  name: 'safe_settings_errors_total',
+  help: 'Total number of errors'
+})
+```
+
+### Dashboard Example
+
+Create a monitoring dashboard with:
+
+1. **Status Panel:** Current state of last sync
+2. **Error Log:** Recent errors and failures
+3. **Sync History:** Timeline of sync operations
+4. **Repository Coverage:** Percentage of repos successfully synced
+5. **API Usage:** GitHub API rate limit consumption
+
+## Troubleshooting with Monitoring Data
+
+<Steps>
+
+### Identify the issue
+
+Check run shows failure or unexpected behavior.
+
+### Review check run output
+
+Examine detailed error messages and stack traces.
+
+### Check logs
+
+Search logs for related error messages around the same timestamp.
+
+### Correlate with changes
+
+Identify if failure correlates with:
+- Recent configuration changes
+- Scheduled sync timing
+- GitHub API issues
+- Specific repositories
+
+### Reproduce in NOP mode
+
+Test configuration changes in PR to reproduce issue safely.
+
+### Apply fix
+
+Update configuration, permissions, or deployment settings.
+
+### Verify resolution
+
+Monitor subsequent check runs to confirm fix.
+
+</Steps>
+
+## Alerting Strategies
+
+### Critical Alerts
+
+Trigger immediate notification:
+- All sync operations failing
+- Admin repository inaccessible
+- GitHub App authentication failures
+- Scheduled sync not running
+
+### Warning Alerts
+
+Trigger review within 24 hours:
+- Individual repository failures
+- Validation errors in PRs
+- Approaching API rate limits
+- Degraded performance
+
+### Informational Alerts
+
+Trigger weekly review:
+- Configuration changes merged
+- New repositories added
+- Drift detected and corrected
+- Usage statistics
+
+## Monitoring Checklist
+
+<Check>
+- [ ] Check runs are being created for every sync operation
+- [ ] Failed check runs trigger notifications
+- [ ] PR comments are enabled for configuration changes
+- [ ] Log level is appropriate for environment
+- [ ] Logs are being persisted and archived
+- [ ] Dashboard or monitoring system is configured
+- [ ] Alerts are configured for critical failures
+- [ ] Team knows where to find check runs and logs
+- [ ] Regular reviews of check run history are scheduled
+- [ ] Metrics are being tracked over time
+</Check>

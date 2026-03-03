@@ -1,0 +1,277 @@
+---
+title: Repository Settings
+description: Configure repository settings including visibility, features, security, and merge options
+---
+
+The `repository` section configures GitHub repository settings. These settings control repository behavior, features, security, and merge strategies.
+
+## Basic Configuration
+
+<ParamField path="name" type="string">
+  Repository name. If not specified, uses the `repo` field.
+</ParamField>
+
+<ParamField path="description" type="string">
+  A short description of the repository that will show up on GitHub.
+  
+  ```yaml
+  repository:
+    description: description of the repo
+  ```
+</ParamField>
+
+<ParamField path="homepage" type="string">
+  A URL with more information about the repository.
+  
+  ```yaml
+  repository:
+    homepage: https://example.github.io/
+  ```
+</ParamField>
+
+<ParamField path="topics" type="array">
+  A list of topics to set on the repository.
+  
+  ```yaml
+  repository:
+    topics:
+      - github
+      - probot
+      - new-topic
+  ```
+</ParamField>
+
+## Visibility and Privacy
+
+<ParamField path="private" type="boolean">
+  Either `true` to make the repository private, or `false` to make it public. If this value is changed and org members cannot change the visibility of repos, it will result in an error.
+  
+  ```yaml
+  repository:
+    private: true
+  ```
+</ParamField>
+
+<ParamField path="visibility" type="string">
+  Can be `public`, `private`, or `internal`. If your organization is associated with an enterprise account using GitHub Enterprise Cloud or GitHub Enterprise Server 2.20+, visibility can also be `internal`.
+  
+  ```yaml
+  repository:
+    visibility: private
+  ```
+</ParamField>
+
+<ParamField path="archived" type="boolean" default="false">
+  Whether to archive this repository. `false` will unarchive a previously archived repository.
+  
+  ```yaml
+  repository:
+    archived: false
+  ```
+</ParamField>
+
+## Repository Features
+
+<ParamField path="has_issues" type="boolean">
+  Either `true` to enable issues for this repository, or `false` to disable them.
+  
+  ```yaml
+  repository:
+    has_issues: true
+  ```
+</ParamField>
+
+<ParamField path="has_projects" type="boolean">
+  Either `true` to enable projects for this repository, or `false` to disable them. If projects are disabled for the organization, passing `true` will cause an API error.
+  
+  ```yaml
+  repository:
+    has_projects: true
+  ```
+</ParamField>
+
+<ParamField path="has_wiki" type="boolean">
+  Either `true` to enable the wiki for this repository, or `false` to disable it.
+  
+  ```yaml
+  repository:
+    has_wiki: true
+  ```
+</ParamField>
+
+## Branch Configuration
+
+<ParamField path="default_branch" type="string">
+  The default branch for this repository. Safe Settings will rename the branch if it already exists, or create it if it doesn't exist.
+  
+  ```yaml
+  repository:
+    default_branch: main
+  ```
+</ParamField>
+
+## Merge Options
+
+<ParamField path="allow_squash_merge" type="boolean">
+  Either `true` to allow squash-merging pull requests, or `false` to prevent squash-merging.
+  
+  ```yaml
+  repository:
+    allow_squash_merge: true
+  ```
+</ParamField>
+
+<ParamField path="allow_merge_commit" type="boolean">
+  Either `true` to allow merging pull requests with a merge commit, or `false` to prevent merging pull requests with merge commits.
+  
+  ```yaml
+  repository:
+    allow_merge_commit: true
+  ```
+</ParamField>
+
+<ParamField path="allow_rebase_merge" type="boolean">
+  Either `true` to allow rebase-merging pull requests, or `false` to prevent rebase-merging.
+  
+  ```yaml
+  repository:
+    allow_rebase_merge: true
+  ```
+</ParamField>
+
+<ParamField path="allow_auto_merge" type="boolean" default="false">
+  Either `true` to allow auto-merge on pull requests, or `false` to disallow auto-merge.
+  
+  ```yaml
+  repository:
+    allow_auto_merge: true
+  ```
+</ParamField>
+
+<ParamField path="delete_branch_on_merge" type="boolean" default="false">
+  Either `true` to allow automatically deleting head branches when pull requests are merged, or `false` to prevent automatic deletion.
+  
+  ```yaml
+  repository:
+    delete_branch_on_merge: true
+  ```
+</ParamField>
+
+<ParamField path="allow_update_branch" type="boolean" default="false">
+  Either `true` to allow update branch on pull requests, or `false` to disallow update branch.
+  
+  ```yaml
+  repository:
+    allow_update_branch: true
+  ```
+</ParamField>
+
+## Security Settings
+
+<ParamField path="security" type="object">
+  Settings for Code security and analysis features.
+  
+  <ParamField path="security.enableVulnerabilityAlerts" type="boolean">
+    Enable or disable Dependabot alerts for the repository.
+  </ParamField>
+  
+  <ParamField path="security.enableAutomatedSecurityFixes" type="boolean">
+    Enable or disable Dependabot security updates (automated security fixes) for the repository.
+  </ParamField>
+  
+  ```yaml
+  repository:
+    security:
+      enableVulnerabilityAlerts: true
+      enableAutomatedSecurityFixes: true
+  ```
+</ParamField>
+
+## Repository Creation
+
+<ParamField path="force_create" type="boolean">
+  If set to `true`, Safe Settings will create the repository if it doesn't exist. This setting is not sent to the GitHub API.
+  
+  ```yaml
+  repository:
+    force_create: true
+  ```
+</ParamField>
+
+<ParamField path="auto_init" type="boolean">
+  Create an initial commit with empty README. Keep this set to `true` in most cases since many policies cannot be implemented on bare repos.
+  
+  ```yaml
+  repository:
+    auto_init: true
+  ```
+</ParamField>
+
+<ParamField path="template" type="string">
+  When creating a repository with `force_create`, use this template repository name. The template must be owned by the same organization.
+  
+  ```yaml
+  repository:
+    force_create: true
+    template: template-repo-name
+  ```
+</ParamField>
+
+<ParamField path="gitignore_template" type="string">
+  Desired language or platform [.gitignore template](https://github.com/github/gitignore) to apply. Use the name of the template without the extension. For example, "Haskell".
+  
+  ```yaml
+  repository:
+    gitignore_template: node
+  ```
+</ParamField>
+
+<ParamField path="license_template" type="string">
+  Choose an [open source license template](https://choosealicense.com/) that best suits your needs, and then use the [license keyword](https://help.github.com/articles/licensing-a-repository/#searching-github-by-license-type) as the `license_template` string. For example, "mit" or "mpl-2.0".
+  
+  ```yaml
+  repository:
+    license_template: mit
+  ```
+</ParamField>
+
+## Complete Example
+
+```yaml
+repository:
+  description: description of the repo
+  homepage: https://example.github.io/
+  auto_init: true
+  
+  topics:
+    - github
+    - probot
+    - new-topic
+  
+  security:
+    enableVulnerabilityAlerts: true
+    enableAutomatedSecurityFixes: true
+  
+  private: true
+  visibility: private
+  has_issues: true
+  has_projects: true
+  has_wiki: true
+  
+  default_branch: main
+  
+  allow_squash_merge: true
+  allow_merge_commit: true
+  allow_rebase_merge: true
+  allow_auto_merge: true
+  delete_branch_on_merge: true
+  allow_update_branch: true
+  
+  archived: false
+```
+
+## API Reference
+
+For more details, see GitHub's REST API documentation:
+- [Create an organization repository](https://docs.github.com/en/rest/repos/repos#create-an-organization-repository)
+- [Update a repository](https://docs.github.com/en/rest/repos/repos#update-a-repository)

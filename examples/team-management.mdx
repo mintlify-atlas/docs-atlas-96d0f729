@@ -1,0 +1,564 @@
+---
+title: Team Management Examples
+description: Real-world examples of team permissions with include/exclude patterns for flexible access control across repositories
+---
+
+Team management in Safe Settings allows you to centrally define team permissions across repositories with powerful pattern matching for flexible access control.
+
+## Basic Team Permissions
+
+Define teams with repository access at the org level:
+
+```yaml
+teams:
+  - name: engineering
+    permission: push
+  
+  - name: leads
+    permission: admin
+  
+  - name: read-only
+    permission: pull
+```
+
+**Permissions**:
+- `pull`: Read-only access (clone, pull)
+- `push`: Write access (push, merge PRs)
+- `admin`: Full access (settings, permissions, delete)
+
+## Pattern-Based Access Control
+
+<Tabs>
+  <Tab title="Include Patterns">
+    ```yaml
+    teams:
+      # Frontend team only has access to frontend repos
+      - name: frontend-team
+        permission: push
+        include:
+          - "frontend-*"
+          - "web-*"
+          - "ui-components"
+      
+      # Backend team only has access to backend repos
+      - name: backend-team
+        permission: push
+        include:
+          - "backend-*"
+          - "api-*"
+          - "service-*"
+      
+      # Mobile team only has access to mobile apps
+      - name: mobile-team
+        permission: push
+        include:
+          - "ios-*"
+          - "android-*"
+          - "mobile-*"
+    ```
+    
+    **Use case**: Give teams access only to their specific repositories using naming conventions.
+  </Tab>
+  
+  <Tab title="Exclude Patterns">
+    ```yaml
+    teams:
+      # All engineers have access to everything except sensitive repos
+      - name: engineering
+        permission: push
+        exclude:
+          - "admin"
+          - ".github"
+          - "security-*"
+          - "*-secrets"
+          - "infrastructure-*"
+      
+      # Contractors have access except production and security repos
+      - name: contractors
+        permission: pull
+        exclude:
+          - "*-prod"
+          - "*-production"
+          - "security-*"
+          - "admin"
+    ```
+    
+    **Use case**: Grant broad access but exclude sensitive repositories.
+  </Tab>
+  
+  <Tab title="Combined Include/Exclude">
+    ```yaml
+    teams:
+      # QA team can access all test repos except security tests
+      - name: qa-team
+        permission: push
+        include:
+          - "*-test"
+          - "*-testing"
+          - "test-*"
+        exclude:
+          - "security-test"
+          - "pentest-*"
+      
+      # DevOps has admin on infrastructure except production
+      - name: devops
+        permission: admin
+        include:
+          - "infrastructure-*"
+          - "terraform-*"
+          - "k8s-*"
+        exclude:
+          - "*-production"
+    ```
+    
+    **Use case**: Fine-grained control with both inclusion and exclusion patterns.
+    
+    <Note>
+      When both `include` and `exclude` are specified, `exclude` takes precedence. The team will have access to repositories matching `include` patterns that don't match `exclude` patterns.
+    </Note>
+  </Tab>
+</Tabs>
+
+## Real-World Team Structures
+
+### Startup/Small Company
+
+```yaml
+teams:
+  # Everyone has push access to most repos
+  - name: engineering
+    permission: push
+    exclude:
+      - "admin"
+      - ".github"
+  
+  # Founders/CTOs have admin everywhere
+  - name: founders
+    permission: admin
+  
+  # Contractors have limited access
+  - name: contractors
+    permission: pull
+    include:
+      - "docs-*"
+      - "prototype-*"
+```
+
+### Mid-Size Company with Multiple Teams
+
+```yaml
+teams:
+  # Platform team has admin on infrastructure
+  - name: platform
+    permission: admin
+    include:
+      - "infrastructure-*"
+      - "platform-*"
+      - "shared-*"
+  
+  # Each product team manages their own repos
+  - name: team-billing
+    permission: admin
+    include:
+      - "billing-*"
+      - "payments-*"
+  
+  - name: team-analytics
+    permission: admin
+    include:
+      - "analytics-*"
+      - "data-*"
+  
+  - name: team-integrations
+    permission: admin
+    include:
+      - "integration-*"
+      - "connector-*"
+  
+  # All engineers can read everything
+  - name: engineering-all
+    permission: pull
+    exclude:
+      - "admin"
+      - "*-secrets"
+  
+  # Security team has read access to everything
+  - name: security
+    permission: pull
+  
+  # Tech leads can push to all repos
+  - name: tech-leads
+    permission: push
+    exclude:
+      - "admin"
+```
+
+### Enterprise with Strict Governance
+
+```yaml
+teams:
+  # Governance team oversees configuration
+  - name: governance
+    permission: admin
+    include:
+      - "admin"
+      - ".github"
+  
+  # Security team has read access everywhere
+  - name: security
+    permission: pull
+  
+  # Each business unit has isolated access
+  - name: bu-retail
+    permission: admin
+    include:
+      - "retail-*"
+  
+  - name: bu-wholesale
+    permission: admin
+    include:
+      - "wholesale-*"
+  
+  - name: bu-marketplace
+    permission: admin
+    include:
+      - "marketplace-*"
+  
+  # SRE has admin on production infrastructure
+  - name: sre
+    permission: admin
+    include:
+      - "*-production"
+      - "*-prod"
+      - "infrastructure-*"
+      - "monitoring-*"
+  
+  # Junior engineers have limited push access
+  - name: junior-engineers
+    permission: push
+    exclude:
+      - "*-production"
+      - "*-prod"
+      - "admin"
+      - "security-*"
+  
+  # Release managers control release repos
+  - name: release-managers
+    permission: admin
+    include:
+      - "release-*"
+      - "*-release"
+```
+
+## Special Access Patterns
+
+### Temporary Access for Vendors/Consultants
+
+```yaml
+teams:
+  # Vendor gets limited access to specific project
+  - name: vendor-acme-corp
+    permission: push
+    include:
+      - "project-acme-*"
+      - "acme-integration"
+  
+  # Consultant gets read access to relevant repos
+  - name: consultant-security-audit
+    permission: pull
+    include:
+      - "*-production"
+      - "infrastructure-*"
+    exclude:
+      - "*-secrets"
+      - "credentials-*"
+```
+
+### Service Accounts and Bots
+
+```yaml
+teams:
+  # CI/CD bot team with push access
+  - name: ci-bots
+    permission: push
+    exclude:
+      - "admin"
+  
+  # Documentation bot can only access docs repos
+  - name: docs-automation
+    permission: push
+    include:
+      - "docs-*"
+      - "*-docs"
+```
+
+### Open Source Maintainers
+
+```yaml
+teams:
+  # Core maintainers have admin
+  - name: core-maintainers
+    permission: admin
+    exclude:
+      - "admin"
+  
+  # Community maintainers have push
+  - name: community-maintainers
+    permission: push
+  
+  # Triagers can manage issues
+  - name: triagers
+    permission: triage
+```
+
+## Combining Teams with Collaborators
+
+Use teams for group access and collaborators for individual exceptions:
+
+```yaml
+teams:
+  - name: engineering
+    permission: push
+    exclude:
+      - "admin"
+      - "infrastructure-production"
+
+collaborators:
+  # Give specific engineer admin access to their project
+  - username: alice
+    permission: admin
+    include:
+      - "project-alpha-*"
+  
+  # External security researcher gets read access
+  - username: security-researcher-bob
+    permission: pull
+    include:
+      - "security-*"
+  
+  # Former employee helping with transition
+  - username: charlie-alumni
+    permission: pull
+    include:
+      - "legacy-system"
+```
+
+## Team Visibility
+
+Control whether teams are visible to all org members:
+
+```yaml
+teams:
+  # Public team visible to all org members
+  - name: engineering
+    permission: push
+    visibility: closed  # visible to all org members
+  
+  # Secret team only visible to members
+  - name: security-incident-response
+    permission: admin
+    visibility: secret  # only visible to team members
+    include:
+      - "incident-*"
+      - "security-*"
+```
+
+<Note>
+  Team visibility can only be set when creating a team. It cannot be changed for existing teams through Safe Settings.
+</Note>
+
+## Multi-Level Team Configuration
+
+<CodeGroup>
+```yaml .github/settings.yml (Org Level)
+# Default teams for all repos
+teams:
+  - name: all-engineers
+    permission: pull  # Everyone can read
+  
+  - name: leads
+    permission: admin  # Leads have admin by default
+```
+
+```yaml .github/suborgs/frontend-apps.yml (Suborg Level)
+# Override for frontend repositories
+suborgrepos:
+  - "frontend-*"
+  - "web-*"
+
+teams:
+  - name: frontend-team
+    permission: admin  # Frontend team has admin on their repos
+  
+  - name: design-team
+    permission: push  # Designers can push to frontend repos
+  
+  - name: all-engineers
+    permission: push  # Override: all engineers can push to frontend
+```
+
+```yaml .github/repos/frontend-design-system.yml (Repo Level)
+# Specific repo with tighter access
+teams:
+  - name: design-system-maintainers
+    permission: admin
+  
+  - name: frontend-team
+    permission: push  # Override: frontend team has push, not admin
+  
+  - name: all-engineers
+    permission: pull  # Override: others can only read design system
+```
+</CodeGroup>
+
+**Result**:
+- Most repos: engineers can read, leads have admin
+- Frontend repos: engineers can push, frontend team has admin, designers can push
+- Design system: Only maintainers have admin, frontend team can push, others can read
+
+## Dynamic Team Membership with Suborgs
+
+Automatically apply settings to repos based on team membership:
+
+```yaml
+# .github/suborgs/team-alpha-projects.yml
+suborgteams:
+  - team-alpha  # Any repo team-alpha has access to
+
+teams:
+  - name: team-alpha
+    permission: admin
+  
+  - name: tech-leads
+    permission: push
+  
+  - name: security
+    permission: pull
+
+branches:
+  - name: default
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 2
+```
+
+**Use case**: When team-alpha is added as a collaborator to any repository, these settings automatically apply.
+
+## Pattern Matching Examples
+
+<AccordionGroup>
+  <Accordion title="Wildcard Patterns">
+    ```yaml
+    teams:
+      - name: backend-team
+        permission: push
+        include:
+          - "api-*"         # Matches: api-users, api-orders, api-anything
+          - "*-service"     # Matches: auth-service, payment-service
+          - "backend-*"     # Matches: backend-core, backend-utils
+    ```
+  </Accordion>
+  
+  <Accordion title="Exact Matches">
+    ```yaml
+    teams:
+      - name: docs-team
+        permission: push
+        include:
+          - "documentation"  # Exact match only
+          - "website"        # Exact match only
+          - "blog"           # Exact match only
+    ```
+  </Accordion>
+  
+  <Accordion title="Complex Patterns">
+    ```yaml
+    teams:
+      - name: production-access
+        permission: admin
+        include:
+          - "*-prod"         # Matches: api-prod, web-prod
+          - "*-production"   # Matches: api-production, db-production
+          - "prod-*"         # Matches: prod-api, prod-web
+        exclude:
+          - "test-prod"      # Exclude test environments
+          - "*-prod-backup" # Exclude backup repos
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<Card title="Use Consistent Naming Conventions" icon="tag">
+  Name repositories consistently to make pattern matching easier:
+  - `frontend-*` for frontend repos
+  - `backend-*` for backend repos
+  - `*-prod` for production repos
+  - `*-test` for test repos
+</Card>
+
+<Card title="Start Broad, Then Restrict" icon="filter">
+  Give teams broad access by default, then use `exclude` for sensitive repos:
+  ```yaml
+  teams:
+    - name: engineering
+      permission: push
+      exclude:
+        - "admin"
+        - "*-secrets"
+        - "*-production"
+  ```
+</Card>
+
+<Card title="Document Team Purpose" icon="book">
+  Use comments to document why teams exist:
+  ```yaml
+  teams:
+    # Vendor access - expires 2024-12-31
+    - name: vendor-acme
+      permission: pull
+      include:
+        - "integration-acme-*"
+  ```
+</Card>
+
+<Card title="Regular Access Reviews" icon="clock">
+  Periodically review team access patterns to ensure they're still appropriate. Remove temporary teams when projects complete.
+</Card>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Team not getting access to repos">
+    **Check**:
+    - Team name matches exactly (case-sensitive)
+    - Repository name matches include pattern
+    - Repository doesn't match exclude pattern
+    - Team exists in the organization
+  </Accordion>
+  
+  <Accordion title="Pattern not matching expected repos">
+    **Test** your patterns:
+    - `api-*` matches `api-users`, `api-orders`
+    - `*-api` matches `users-api`, `orders-api`
+    - `*api*` matches `api-users`, `users-api`, `graphql-api`
+  </Accordion>
+  
+  <Accordion title="Conflicts between org and suborg settings">
+    **Remember**: Lower levels override higher levels
+    - Org → Suborg → Repo
+    - Repo-level team permissions override org-level
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Branch Protection" icon="shield" href="/examples/branch-protection">
+    Combine team permissions with branch protection rules
+  </Card>
+  
+  <Card title="Multi-Level Config" icon="layer-group" href="/examples/multi-level-config">
+    Learn how team settings merge across configuration levels
+  </Card>
+</CardGroup>

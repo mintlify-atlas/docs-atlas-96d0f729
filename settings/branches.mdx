@@ -1,0 +1,278 @@
+---
+title: Branch Protection
+description: Configure branch protection rules to enforce code review and status checks
+---
+
+The `branches` section configures branch protection rules for repositories. Branch protection enforces certain workflows, such as requiring pull request reviews or status checks before merging.
+
+## Basic Configuration
+
+<ParamField path="name" type="string" required>
+  The name of the branch to protect. Use `default` to protect the repository's default branch (dynamically resolved).
+  
+  ```yaml
+  branches:
+    - name: main
+      protection:
+        # protection settings
+    - name: default
+      protection:
+        # applies to default branch
+  ```
+</ParamField>
+
+## Protection Settings
+
+<ParamField path="protection" type="object">
+  Branch protection configuration. Set to `null` or `{}` to remove branch protection.
+  
+  ```yaml
+  branches:
+    - name: main
+      protection: null  # removes protection
+  ```
+</ParamField>
+
+### Pull Request Reviews
+
+<ParamField path="protection.required_pull_request_reviews" type="object">
+  Require at least one approving review on a pull request before merging. Set to `null` to disable.
+  
+  <ParamField path="required_approving_review_count" type="integer">
+    The number of approvals required (1-6).
+  </ParamField>
+  
+  <ParamField path="dismiss_stale_reviews" type="boolean">
+    Dismiss approved reviews automatically when a new commit is pushed.
+  </ParamField>
+  
+  <ParamField path="require_code_owner_reviews" type="boolean">
+    Blocks merge until code owners have reviewed.
+  </ParamField>
+  
+  <ParamField path="require_last_push_approval" type="boolean">
+    Whether the most recent reviewable push must be approved by someone other than the person who pushed it.
+  </ParamField>
+  
+  <ParamField path="bypass_pull_request_allowances" type="object">
+    Allow specific users, teams, or apps to bypass pull request requirements. Set to `null` to disable.
+    
+    <ParamField path="apps" type="array">
+      Array of app slugs allowed to bypass.
+    </ParamField>
+    
+    <ParamField path="users" type="array">
+      Array of usernames allowed to bypass.
+    </ParamField>
+    
+    <ParamField path="teams" type="array">
+      Array of team slugs allowed to bypass.
+    </ParamField>
+  </ParamField>
+  
+  <ParamField path="dismissal_restrictions" type="object">
+    Specify which users and teams can dismiss pull request reviews. User and team dismissal_restrictions are only available for organization-owned repositories.
+    
+    <ParamField path="users" type="array">
+      Array of usernames.
+    </ParamField>
+    
+    <ParamField path="teams" type="array">
+      Array of team slugs.
+    </ParamField>
+  </ParamField>
+  
+  ```yaml
+  branches:
+    - name: main
+      protection:
+        required_pull_request_reviews:
+          required_approving_review_count: 1
+          dismiss_stale_reviews: true
+          require_code_owner_reviews: true
+          require_last_push_approval: true
+          bypass_pull_request_allowances:
+            apps: []
+            users: []
+            teams: []
+          dismissal_restrictions:
+            users: []
+            teams: []
+  ```
+</ParamField>
+
+### Status Checks
+
+<ParamField path="protection.required_status_checks" type="object">
+  Require status checks to pass before merging. Set to `null` to disable.
+  
+  <ParamField path="strict" type="boolean" required>
+    Require branches to be up to date before merging.
+  </ParamField>
+  
+  <ParamField path="contexts" type="array" required>
+    The list of status checks to require in order to merge into this branch. Use `{{EXTERNALLY_DEFINED}}` as a special value to allow status checks to be managed outside of Safe Settings (prevents Safe Settings from overwriting manually added checks).
+  </ParamField>
+  
+  ```yaml
+  branches:
+    - name: main
+      protection:
+        required_status_checks:
+          strict: true
+          contexts:
+            - CI
+            - CodeQL
+  ```
+  
+  #### Using `{{EXTERNALLY_DEFINED}}`
+  
+  When you include `{{EXTERNALLY_DEFINED}}` in the contexts array, Safe Settings will not manage the status checks list. This allows you to add status checks manually through the GitHub UI or other tools.
+  
+  ```yaml
+  branches:
+    - name: main
+      protection:
+        required_status_checks:
+          strict: true
+          contexts:
+            - '{{EXTERNALLY_DEFINED}}'
+  ```
+</ParamField>
+
+### Administrator Enforcement
+
+<ParamField path="protection.enforce_admins" type="boolean">
+  Enforce all configured restrictions for administrators. Set to `true` to enforce required status checks for repository administrators. Set to `null` to disable.
+  
+  ```yaml
+  branches:
+    - name: main
+      protection:
+        enforce_admins: true
+  ```
+</ParamField>
+
+### Push Restrictions
+
+<ParamField path="protection.restrictions" type="object">
+  Restrict who can push to this branch. Team and user restrictions are only available for organization-owned repositories. Set to `null` to disable.
+  
+  <ParamField path="apps" type="array">
+    Array of app slugs.
+  </ParamField>
+  
+  <ParamField path="users" type="array">
+    Array of usernames.
+  </ParamField>
+  
+  <ParamField path="teams" type="array">
+    Array of team slugs.
+  </ParamField>
+  
+  ```yaml
+  branches:
+    - name: main
+      protection:
+        restrictions:
+          apps: []
+          users: []
+          teams: []
+  ```
+</ParamField>
+
+### Additional Protection Rules
+
+<ParamField path="protection.required_conversation_resolution" type="boolean">
+  Require all conversations on code to be resolved before a pull request can be merged.
+  
+  ```yaml
+  branches:
+    - name: main
+      protection:
+        required_conversation_resolution: true
+  ```
+</ParamField>
+
+<ParamField path="protection.required_linear_history" type="boolean">
+  Require linear history (prevent merge commits).
+  
+  ```yaml
+  branches:
+    - name: main
+      protection:
+        required_linear_history: true
+  ```
+</ParamField>
+
+<ParamField path="protection.required_signatures" type="boolean">
+  Require signed commits.
+  
+  ```yaml
+  branches:
+    - name: main
+      protection:
+        required_signatures: true
+  ```
+</ParamField>
+
+<ParamField path="protection.allow_deletions" type="boolean">
+  Allow users with push access to delete matching branches.
+  
+  ```yaml
+  branches:
+    - name: main
+      protection:
+        allow_deletions: false
+  ```
+</ParamField>
+
+## Complete Example
+
+```yaml
+branches:
+  - name: default
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 1
+        dismiss_stale_reviews: true
+        require_code_owner_reviews: true
+        require_last_push_approval: true
+        bypass_pull_request_allowances:
+          apps: []
+          users: []
+          teams: []
+        dismissal_restrictions:
+          users: []
+          teams: []
+      required_status_checks:
+        strict: true
+        contexts:
+          - CI
+          - CodeQL
+      enforce_admins: true
+      restrictions:
+        apps: []
+        users: []
+        teams: []
+      required_conversation_resolution: true
+      required_linear_history: false
+      required_signatures: false
+      allow_deletions: false
+```
+
+## Removing Branch Protection
+
+To remove branch protection from a branch:
+
+```yaml
+branches:
+  - name: develop
+    protection: {}  # or null
+```
+
+## API Reference
+
+For more details, see GitHub's REST API documentation:
+- [Update branch protection](https://docs.github.com/en/rest/branches/branch-protection#update-branch-protection)
+- [Delete branch protection](https://docs.github.com/en/rest/branches/branch-protection#delete-branch-protection)

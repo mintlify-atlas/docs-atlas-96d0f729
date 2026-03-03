@@ -1,0 +1,309 @@
+---
+title: Scheduled Synchronization
+description: Configure periodic syncs to prevent configuration drift and ensure continuous compliance across your organization
+---
+
+Safe Settings can be configured to run periodic synchronization jobs using cron scheduling. This ensures that even if webhook events are missed or manual changes are made, your repositories will eventually converge back to the desired state defined in your configuration.
+
+## Why Scheduled Sync?
+
+Webhook events are not always guaranteed to be delivered. Scheduled synchronization provides:
+
+- **Drift prevention:** Catches manual changes that bypass webhook detection
+- **Reliability:** Ensures settings are eventually consistent even if webhooks fail
+- **Periodic auditing:** Regular checks that all repositories remain compliant
+- **Recovery:** Automatically corrects any configuration drift over time
+
+**Source:** `README.md:418-421`
+
+## CRON Configuration
+
+Scheduled sync is configured using the `CRON` environment variable with node-cron syntax.
+
+### Node-Cron Syntax
+
+```bash
+# ┌────────────── second (optional)
+# │ ┌──────────── minute
+# │ │ ┌────────── hour
+# │ │ │ ┌──────── day of month
+# │ │ │ │ ┌────── month
+# │ │ │ │ │ ┌──── day of week
+# │ │ │ │ │ │
+# │ │ │ │ │ │
+# * * * * * *
+```
+
+**Source:** `index.js:649-659` and `README.md:511-523`
+
+### Configuration Examples
+
+<CodeGroup>
+
+```bash .env - Every Minute
+CRON="* * * * *"
+```
+
+```bash .env - Every Hour
+CRON="0 * * * *"
+```
+
+```bash .env - Every Day at Midnight
+CRON="0 0 * * *"
+```
+
+```bash .env - Every Monday at 9 AM
+CRON="0 9 * * 1"
+```
+
+```bash .env - Every 15 Minutes
+CRON="*/15 * * * *"
+```
+
+```bash .env - Twice Daily (9 AM and 6 PM)
+CRON="0 9,18 * * *"
+```
+
+</CodeGroup>
+
+<Warning>
+Setting a very frequent schedule (e.g., every minute) can cause rate limiting issues with the GitHub API, especially for organizations with many repositories. Consider your organization size when choosing a schedule.
+</Warning>
+
+## How Scheduled Sync Works
+
+When the cron schedule triggers, Safe Settings performs a full synchronization across all repositories in the organization.
+
+<Steps>
+
+### Cron trigger activates
+
+The node-cron scheduler fires at the specified interval.
+
+### Fetch installations
+
+Safe Settings retrieves all GitHub App installations.
+
+### Load configurations
+
+Fetches the latest configuration from the admin repository:
+- `.github/settings.yml` (org-level)
+- `.github/suborgs/*.yml` (suborg-level)
+- `.github/repos/*.yml` (repo-level)
+
+### Process all repositories
+
+Iterates through all repositories in the installation and applies settings:
+- Merges configurations (org → suborg → repo)
+- Compares with current GitHub settings
+- Makes API calls only if changes are detected
+
+### Create check run
+
+Creates a check run in the admin repository with:
+- Success/failure status
+- List of repositories processed
+- Any errors encountered
+
+</Steps>
+
+**Source:** `index.js:660-664`
+
+```javascript
+if (process.env.CRON) {
+  cron.schedule(process.env.CRON, () => {
+    robot.log.debug('running a task every minute')
+    syncInstallation()
+  })
+}
+```
+
+## Sync Installation Function
+
+The `syncInstallation` function is the core of scheduled synchronization.
+
+**Source:** `index.js:226-248`
+
+```javascript
+async function syncInstallation (nop = false) {
+  robot.log.trace('Fetching installations')
+  const github = await robot.auth()
+
+  const installations = await github.paginate(
+    github.apps.listInstallations.endpoint.merge({ per_page: 100 })
+  )
+
+  if (installations.length > 0) {
+    const installation = installations[0]
+    const github = await robot.auth(installation.id)
+    const context = {
+      payload: { installation },
+      octokit: github,
+      log: robot.log,
+      repo: () => { 
+        return { repo: env.ADMIN_REPO, owner: installation.account.login } 
+      }
+    }
+    return syncAllSettings(nop, context)
+  }
+  return null
+}
+```
+
+### Key Features
+
+- **Installation-aware:** Works with GitHub App installations
+- **Context creation:** Builds a context object similar to webhook events
+- **Full sync:** Calls `syncAllSettings()` to process all repositories
+- **NOP mode support:** Can run in dry-run mode for testing
+
+## Performance Considerations
+
+Scheduled sync is designed to handle large organizations efficiently:
+
+### Rate Limiting
+
+- Probot automatically handles GitHub API rate limits and abuse limits
+- Requests are throttled and retried automatically
+- Consider using less frequent schedules for large organizations
+
+**Source:** `README.md:311-316`
+
+### Selective Loading
+
+- Configs are only loaded when needed
+- Uses GitHub's Tree API for efficient file listing
+- Caches file contents with ETags to minimize data transfer
+
+**Source:** `lib/settings.js:838-891`
+
+### Smart Comparison
+
+- Compares desired state with current GitHub settings
+- Only makes API calls when actual changes are detected
+- Skips repositories that are already in compliance
+
+**Source:** `README.md:318-417`
+
+### Token Lifetime
+
+<Info>
+GitHub App tokens expire after 1 hour. Scheduled sync operations must complete within this timeframe. For very large organizations, consider:
+- Optimizing your configuration structure
+- Using fewer repositories per sync
+- Splitting into multiple installations
+</Info>
+
+**Source:** `README.md:308-310`
+
+## Monitoring Scheduled Syncs
+
+Each scheduled sync creates a check run in the admin repository, allowing you to monitor:
+
+- **Execution time:** When the sync ran
+- **Success/failure:** Whether all settings were applied successfully
+- **Errors:** Detailed error messages for any failures
+- **Changes applied:** Summary of modifications made
+
+See [Monitoring](/operations/monitoring) for details on check runs.
+
+## Scheduled Sync vs Webhook Events
+
+| Aspect | Webhook Events | Scheduled Sync |
+|--------|---------------|----------------|
+| **Trigger** | Immediate (on change) | Periodic (cron schedule) |
+| **Latency** | Seconds | Minutes to hours |
+| **Reliability** | Depends on webhook delivery | Guaranteed if app is running |
+| **API Usage** | Minimal (only affected repos) | Higher (checks all repos) |
+| **Use Case** | Real-time enforcement | Drift prevention & recovery |
+| **Scope** | Specific repos/events | All repositories |
+
+## Best Practices
+
+<AccordionGroup>
+
+<Accordion title="Choose appropriate schedule frequency">
+For most organizations:
+- **Small (< 50 repos):** Every 15-30 minutes
+- **Medium (50-500 repos):** Every 1-2 hours
+- **Large (> 500 repos):** Every 4-24 hours
+
+Consider API rate limits and the criticality of drift prevention.
+</Accordion>
+
+<Accordion title="Test with dry-run mode first">
+Before enabling scheduled sync in production:
+
+```javascript
+syncInstallation(true) // nop=true for dry-run
+```
+
+This validates configurations without making actual changes.
+</Accordion>
+
+<Accordion title="Monitor check runs regularly">
+Scheduled syncs create check runs in the admin repository. Monitor these for:
+- Recurring errors
+- Performance degradation
+- Unexpected changes
+</Accordion>
+
+<Accordion title="Combine with webhook events">
+Use both approaches:
+- Webhooks for immediate enforcement
+- Scheduled sync as a safety net for missed events or drift
+</Accordion>
+
+<Accordion title="Configure logging appropriately">
+Set `LOG_LEVEL` to balance visibility and log volume:
+
+```bash
+LOG_LEVEL=info  # For production
+LOG_LEVEL=debug # For troubleshooting
+```
+</Accordion>
+
+</AccordionGroup>
+
+## Environment Variables
+
+Related environment variables for scheduled sync:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CRON` | (not set) | Node-cron schedule expression |
+| `LOG_LEVEL` | (varies) | Logging verbosity (trace, debug, info, warn, error) |
+| `ADMIN_REPO` | `admin` | Repository containing configurations |
+
+**Source:** `README.md:507-551`
+
+## Disabling Scheduled Sync
+
+To disable scheduled synchronization, simply remove or comment out the `CRON` environment variable:
+
+```bash .env
+# CRON="0 * * * *"  # Disabled
+```
+
+Safe Settings will continue to respond to webhook events but will not perform periodic syncs.
+
+## Example: Production Configuration
+
+A typical production setup for a medium-sized organization:
+
+```bash .env
+# Sync every 2 hours
+CRON="0 */2 * * *"
+
+# Production logging
+LOG_LEVEL=info
+
+# Admin repository name
+ADMIN_REPO=safe-settings-config
+```
+
+This configuration:
+- Runs sync 12 times per day
+- Balances drift prevention with API usage
+- Provides adequate logging for monitoring
+- Uses a custom admin repository name

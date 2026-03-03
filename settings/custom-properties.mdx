@@ -1,0 +1,246 @@
+---
+title: Custom Properties
+description: Configure custom repository properties for organization-level metadata
+---
+
+The `custom_properties` section configures custom repository properties. Custom properties allow you to add organization-level metadata to repositories, which can be used for categorization, filtering, and reporting.
+
+## Overview
+
+Custom properties must first be defined at the organization level before they can be set on repositories. Safe Settings allows you to set values for existing custom properties but does not create new property definitions.
+
+## Basic Configuration
+
+<ParamField path="name" type="string" required>
+  The name of the custom property. Names are automatically converted to lowercase to avoid comparison issues.
+  
+  ```yaml
+  custom_properties:
+    - name: team
+      value: platform
+  ```
+</ParamField>
+
+<ParamField path="value" type="string" required>
+  The value to set for the custom property. The value type must match the property definition at the organization level (string, single select, multi select, or true/false).
+  
+  ```yaml
+  custom_properties:
+    - name: environment
+      value: production
+  ```
+</ParamField>
+
+## Complete Examples
+
+### Basic Properties
+
+```yaml
+custom_properties:
+  - name: team
+    value: platform
+  
+  - name: environment
+    value: production
+  
+  - name: criticality
+    value: high
+```
+
+### Mixed Property Types
+
+```yaml
+custom_properties:
+  # String property
+  - name: owner
+    value: platform-team
+  
+  # Single select property
+  - name: tier
+    value: tier-1
+  
+  # Boolean property (as string)
+  - name: archived
+    value: 'false'
+  
+  # Numeric property (as string)
+  - name: sla_hours
+    value: '24'
+```
+
+## Removing Custom Properties
+
+To remove a custom property value from a repository, Safe Settings sets the value to `null`. Properties cannot be deleted from repositories, only unset.
+
+```yaml
+# This will unset the property on the repository
+custom_properties:
+  - name: deprecated_property
+    value: null
+```
+
+## Property Name Normalization
+
+Custom property names are automatically converted to lowercase by Safe Settings. This ensures consistency and avoids comparison issues:
+
+```yaml
+# These are treated as the same property
+custom_properties:
+  - name: TeamName      # Converted to "teamname"
+    value: platform
+  
+  - name: teamname      # Same as above
+    value: platform
+```
+
+## Common Use Cases
+
+### Team Ownership
+
+```yaml
+custom_properties:
+  - name: team
+    value: platform-engineering
+  
+  - name: tech-lead
+    value: jane-doe
+  
+  - name: product-owner
+    value: john-smith
+```
+
+### Environment Classification
+
+```yaml
+custom_properties:
+  - name: environment-type
+    value: production
+  
+  - name: deployment-tier
+    value: tier-1
+  
+  - name: high-availability
+    value: 'true'
+```
+
+### Compliance and Governance
+
+```yaml
+custom_properties:
+  - name: compliance-level
+    value: pci-dss
+  
+  - name: data-classification
+    value: confidential
+  
+  - name: audit-required
+    value: 'true'
+```
+
+### Project Metadata
+
+```yaml
+custom_properties:
+  - name: project-code
+    value: PROJ-1234
+  
+  - name: cost-center
+    value: '8800'
+  
+  - name: business-unit
+    value: platform
+```
+
+## Organization-Level Property Definitions
+
+Before using custom properties in Safe Settings, they must be defined at the organization level. This is done through the GitHub UI or API:
+
+1. Go to your organization settings
+2. Navigate to "Custom properties"
+3. Create property definitions with:
+   - Name
+   - Description
+   - Type (string, single select, multi select, or true/false)
+   - Default value (optional)
+   - Required/optional
+
+Once defined, these properties can be set on repositories using Safe Settings.
+
+## Property Types
+
+### String Properties
+
+Free-form text values:
+
+```yaml
+custom_properties:
+  - name: description
+    value: Core API service
+```
+
+### Single Select Properties
+
+Must match one of the allowed values defined at the org level:
+
+```yaml
+custom_properties:
+  - name: tier
+    value: tier-1  # Must be one of the allowed values
+```
+
+### Multi Select Properties
+
+Can contain multiple values from the allowed list (format may vary based on org configuration):
+
+```yaml
+custom_properties:
+  - name: tags
+    value: api,backend,critical
+```
+
+### Boolean Properties
+
+Boolean values represented as strings:
+
+```yaml
+custom_properties:
+  - name: production-ready
+    value: 'true'
+  
+  - name: deprecated
+    value: 'false'
+```
+
+## Querying Repositories by Custom Properties
+
+Once set, custom properties can be used to filter and search repositories in the GitHub UI and API:
+
+```bash
+# Search for repositories with specific property values
+gh api /orgs/<org>/repos --jq '.[] | select(.custom_properties.team == "platform")'
+
+# List all custom properties for a repository
+gh api /repos/<org>/<repo>/properties
+```
+
+## Best Practices
+
+1. **Consistent Naming**: Use lowercase, hyphen-separated names for properties
+2. **Define First**: Always define properties at the org level before setting them in repos
+3. **Document Values**: Document allowed values for select properties in your organization
+4. **Use Sparingly**: Only create properties that will be consistently used across repositories
+5. **Standardize Values**: Establish conventions for property values (e.g., team names, tier levels)
+
+## Limitations
+
+- Custom properties must be defined at the organization level before use
+- Property names are limited to lowercase alphanumeric characters and hyphens
+- Property values cannot be deleted, only set to `null`
+- The number of custom properties per organization may be limited by GitHub
+
+## API Reference
+
+For more details, see GitHub's REST API documentation:
+- [Create or update custom property values for a repository](https://docs.github.com/en/rest/repos/custom-properties#create-or-update-custom-property-values-for-a-repository)
+- [Get custom property values for a repository](https://docs.github.com/en/rest/repos/custom-properties#get-custom-property-values-for-a-repository)
+- [About custom properties](https://docs.github.com/en/organizations/managing-organization-settings/managing-custom-properties-for-repositories-in-your-organization)

@@ -1,0 +1,573 @@
+---
+title: Organization Settings
+description: Configure organization-wide defaults for all repositories in your GitHub organization
+---
+
+Organization-level settings provide the baseline configuration for all repositories in your organization. These settings are stored in `.github/settings.yml` in your admin repository.
+
+## File Location
+
+```
+admin/
+└── .github/
+    └── settings.yml    # Organization-wide settings
+```
+
+<Note>
+You can customize the settings file location using the `SETTINGS_FILE_PATH` environment variable (default: `settings.yml`).
+</Note>
+
+## Configuration Scope
+
+Org-level settings can configure two types of targets:
+
+1. **Org-targeted settings** - Applied to the organization itself (e.g., org-level rulesets)
+2. **Repo-targeted settings** - Default settings applied to all repositories
+
+<Warning>
+Org-level settings have the lowest precedence. They can be overridden by suborg-level and repo-level settings.
+</Warning>
+
+## Repository Settings
+
+Define default settings for all repositories in your organization:
+
+```yaml .github/settings.yml
+repository:
+  # A short description of the repository
+  description: description of the repo
+
+  # A URL with more information about the repository
+  homepage: https://example.github.io/
+
+  # Create an initial commit with empty README
+  auto_init: true
+
+  # Repository topics
+  topics:
+    - github
+    - automation
+    - policy-as-code
+
+  # Security settings
+  security:
+    enableVulnerabilityAlerts: true
+    enableAutomatedSecurityFixes: true
+
+  # Repository visibility
+  private: true
+  visibility: private
+
+  # Features
+  has_issues: true
+  has_projects: true
+  has_wiki: true
+
+  # Default branch
+  default_branch: main
+
+  # Merge options
+  allow_squash_merge: true
+  allow_merge_commit: true
+  allow_rebase_merge: true
+  allow_auto_merge: true
+  allow_update_branch: true
+
+  # Automatically delete head branches after merge
+  delete_branch_on_merge: true
+```
+
+<Accordion title="All available repository settings">
+See the [GitHub API documentation](https://docs.github.com/en/rest/repos/repos#create-an-organization-repository) for all available repository settings.
+
+Common settings include:
+- `description` - Repository description
+- `homepage` - Repository homepage URL
+- `private` / `visibility` - Repository visibility
+- `has_issues` - Enable issues
+- `has_projects` - Enable projects
+- `has_wiki` - Enable wiki
+- `default_branch` - Default branch name
+- `allow_squash_merge` - Allow squash merging
+- `allow_merge_commit` - Allow merge commits
+- `allow_rebase_merge` - Allow rebase merging
+- `allow_auto_merge` - Allow auto-merge
+- `delete_branch_on_merge` - Auto-delete branches after merge
+- `archived` - Archive the repository
+</Accordion>
+
+## Branch Protection
+
+Define default branch protection rules. Use `default` as the branch name to apply protection to each repository's default branch:
+
+```yaml .github/settings.yml
+branches:
+  - name: default  # Special value: applies to the default branch of each repo
+    protection:
+      # Required pull request reviews
+      required_pull_request_reviews:
+        required_approving_review_count: 1
+        dismiss_stale_reviews: true
+        require_code_owner_reviews: true
+        require_last_push_approval: true
+        bypass_pull_request_allowances:
+          apps: []
+          users: []
+          teams: []
+        dismissal_restrictions:
+          users: []
+          teams: []
+      
+      # Required status checks
+      required_status_checks:
+        strict: true
+        contexts: []
+      
+      # Enforce for administrators
+      enforce_admins: true
+      
+      # Restrict who can push
+      restrictions:
+        apps: []
+        users: []
+        teams: []
+```
+
+<Note>
+When the branch name is set to `default`, Safe Settings applies the protection rules to whatever the default branch is for each repository (usually `main` or `master`).
+</Note>
+
+<Tabs>
+  <Tab title="Basic Protection">
+    ```yaml
+    branches:
+      - name: default
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 1
+            dismiss_stale_reviews: true
+          enforce_admins: false
+          required_status_checks: null
+          restrictions: null
+    ```
+  </Tab>
+  
+  <Tab title="Strict Protection">
+    ```yaml
+    branches:
+      - name: default
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 2
+            dismiss_stale_reviews: true
+            require_code_owner_reviews: true
+            require_last_push_approval: true
+          required_status_checks:
+            strict: true
+            contexts:
+              - "CI/test"
+              - "security/scan"
+          enforce_admins: true
+          restrictions:
+            teams:
+              - core
+    ```
+  </Tab>
+  
+  <Tab title="Multiple Branches">
+    ```yaml
+    branches:
+      - name: default
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 2
+          enforce_admins: true
+      
+      - name: staging
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 1
+          enforce_admins: false
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+Each top-level element under branch protection must be filled. If you don't want to use one of them, set it to `null`. Otherwise, none of the settings will be applied.
+
+Example:
+```yaml
+protection:
+  required_pull_request_reviews:
+    required_approving_review_count: 1
+  required_status_checks: null  # Explicitly disabled
+  enforce_admins: true
+  restrictions: null            # Explicitly disabled
+```
+</Warning>
+
+## Teams
+
+Define teams and their default permissions across all repositories:
+
+```yaml .github/settings.yml
+teams:
+  - name: core
+    permission: admin  # admin, push, or pull
+  
+  - name: developers
+    permission: push
+  
+  - name: contractors
+    permission: pull
+  
+  # Team with visibility setting (only for new teams)
+  - name: public-team
+    permission: push
+    visibility: closed  # closed = visible to all org members, secret = visible only to team members
+```
+
+<Note>
+- The `visibility` setting is only honored when the team is created, not for existing teams.
+- Permission can be: `admin`, `push`, or `pull`
+</Note>
+
+### Scoped Teams
+
+You can scope teams to specific repositories using `include` and `exclude` patterns:
+
+```yaml .github/settings.yml
+teams:
+  - name: frontend-team
+    permission: push
+    include:
+      - "web-*"
+      - "ui-*"
+  
+  - name: backend-team
+    permission: push
+    exclude:
+      - "web-*"
+      - "ui-*"
+```
+
+## Collaborators
+
+Define individual collaborators and their permissions:
+
+```yaml .github/settings.yml
+collaborators:
+  - username: octocat
+    permission: push  # admin, push, or pull
+  
+  - username: external-consultant
+    permission: pull
+    exclude:
+      - production-api  # Don't give access to this repo
+  
+  - username: contractor
+    permission: push
+    include:  # Only give access to these repos
+      - project-alpha
+      - project-beta
+```
+
+## Labels
+
+Define organization-wide labels for issues and pull requests:
+
+```yaml .github/settings.yml
+labels:
+  include:
+    - name: bug
+      color: CC0000
+      description: An issue with the system
+    
+    - name: feature
+      color: "#336699"  # Use quotes when color starts with #
+      description: New functionality
+    
+    - name: priority-high
+      oldname: urgent  # Rename existing label
+      color: "#B60205"
+      description: High priority issue
+  
+  exclude:
+    # Don't delete labels matching these patterns
+    - name: ^release
+    - name: ^version
+```
+
+<Accordion title="Label color formats">
+Label colors can be specified with or without the `#` prefix:
+- `color: CC0000` - Without hash
+- `color: "#CC0000"` - With hash (must use quotes)
+</Accordion>
+
+## Milestones
+
+Define default milestones:
+
+```yaml .github/settings.yml
+milestones:
+  - title: v1.0
+    description: First major release
+    state: open  # open or closed
+  
+  - title: v2.0
+    description: Second major release
+    state: open
+```
+
+## Autolinks
+
+Configure autolinks to reference external resources:
+
+```yaml .github/settings.yml
+autolinks:
+  - key_prefix: "JIRA-"
+    url_template: "https://jira.example.com/browse/JIRA-<num>"
+    is_alphanumeric: false
+  
+  - key_prefix: "TICKET-"
+    url_template: "https://ticketing.example.com/<num>"
+    is_alphanumeric: true
+```
+
+## Custom Properties
+
+Set custom properties on repositories:
+
+```yaml .github/settings.yml
+custom_properties:
+  - name: team
+    value: platform
+  
+  - name: environment
+    value: production
+  
+  - name: criticality
+    value: high
+```
+
+## Repository Name Validation
+
+Enforce repository naming conventions using regex patterns:
+
+```yaml .github/settings.yml
+validator:
+  pattern: "[a-zA-Z0-9_-]+"
+```
+
+<Tabs>
+  <Tab title="Simple Pattern">
+    ```yaml
+    validator:
+      pattern: "[a-zA-Z0-9_-]+"
+    ```
+    Allows: alphanumeric, hyphens, underscores
+  </Tab>
+  
+  <Tab title="Prefix Required">
+    ```yaml
+    validator:
+      pattern: "^(api|web|service)-[a-zA-Z0-9_-]+"
+    ```
+    Requires: repos to start with `api-`, `web-`, or `service-`
+  </Tab>
+  
+  <Tab title="Team Prefix">
+    ```yaml
+    validator:
+      pattern: "[a-zA-Z0-9_-]+_[a-zA-Z0-9_-]+.*"
+    ```
+    Requires: format like `team_project`
+  </Tab>
+</Tabs>
+
+## Org-Level Rulesets
+
+Rulesets defined at the org level can target multiple repositories using patterns:
+
+```yaml .github/settings.yml
+rulesets:
+  - name: Production Security
+    target: branch  # branch or tag
+    enforcement: active  # active, disabled, or evaluate
+    
+    # Bypass actors
+    bypass_actors:
+      - actor_id: 1
+        actor_type: OrganizationAdmin
+        bypass_mode: always
+    
+    # Target repositories by name pattern
+    conditions:
+      ref_name:
+        include: ["~DEFAULT_BRANCH"]
+        exclude: []
+      
+      # Org-level only: target specific repos
+      repository_name:
+        include: ["prod-*", "api-*"]
+        exclude: ["api-test"]
+        protected: true  # Prevent renaming
+    
+    # Rules to enforce
+    rules:
+      - type: required_signatures
+      
+      - type: pull_request
+        parameters:
+          required_approving_review_count: 2
+          require_code_owner_review: true
+      
+      - type: required_status_checks
+        parameters:
+          strict_required_status_checks_policy: true
+          required_status_checks:
+            - context: "CI/test"
+              integration_id: 12345
+```
+
+<Warning>
+The `repository_name` condition only works at the org level. It cannot be used in suborg or repo-level rulesets.
+</Warning>
+
+<Accordion title="Available ruleset rule types">
+- `creation` - Prevent branch/tag creation
+- `update` - Control update behavior
+- `deletion` - Prevent deletion
+- `required_linear_history` - Require linear history
+- `required_signatures` - Require signed commits
+- `required_deployments` - Require deployment to environments
+- `pull_request` - Pull request requirements
+- `required_status_checks` - Required CI checks
+- `workflows` - Required workflow runs
+- `commit_message_pattern` - Enforce commit message format
+- `commit_author_email_pattern` - Enforce author email format
+- `committer_email_pattern` - Enforce committer email format
+- `branch_name_pattern` - Enforce branch naming
+- `tag_name_pattern` - Enforce tag naming
+</Accordion>
+
+## Complete Example
+
+Here's a complete organization settings file:
+
+```yaml .github/settings.yml
+# Default repository settings
+repository:
+  private: true
+  has_issues: true
+  has_projects: true
+  has_wiki: false
+  default_branch: main
+  allow_squash_merge: true
+  allow_merge_commit: false
+  allow_rebase_merge: true
+  delete_branch_on_merge: true
+  security:
+    enableVulnerabilityAlerts: true
+    enableAutomatedSecurityFixes: true
+
+# Default branch protection
+branches:
+  - name: default
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 1
+        dismiss_stale_reviews: true
+        require_code_owner_reviews: true
+      required_status_checks:
+        strict: true
+        contexts: []
+      enforce_admins: true
+      restrictions: null
+
+# Organization-wide teams
+teams:
+  - name: core
+    permission: admin
+  - name: developers
+    permission: push
+  - name: external
+    permission: pull
+
+# Standard labels
+labels:
+  include:
+    - name: bug
+      color: CC0000
+      description: Something isn't working
+    - name: enhancement
+      color: 84b6eb
+      description: New feature or request
+    - name: documentation
+      color: 0075ca
+      description: Improvements or additions to documentation
+
+# Repository naming convention
+validator:
+  pattern: "[a-zA-Z0-9_-]+"
+
+# Org-level rulesets
+rulesets:
+  - name: Production Protection
+    target: branch
+    enforcement: active
+    conditions:
+      ref_name:
+        include: ["~DEFAULT_BRANCH"]
+      repository_name:
+        include: ["prod-*"]
+        protected: true
+    rules:
+      - type: required_signatures
+      - type: pull_request
+        parameters:
+          required_approving_review_count: 2
+          require_code_owner_review: true
+```
+
+## Applying Settings
+
+Org-level settings are automatically applied:
+
+<Steps>
+  <Step title="Push to Default Branch">
+    Commit your changes to `.github/settings.yml` and push to the default branch of your admin repo.
+  </Step>
+  
+  <Step title="Safe Settings Processes Change">
+    Safe Settings detects the change via webhook and processes all affected repositories.
+  </Step>
+  
+  <Step title="Settings Applied">
+    The org-level defaults are applied to all repositories (unless overridden by suborg or repo settings).
+  </Step>
+  
+  <Step title="Check Run Created">
+    A check run is created in the admin repo showing the results.
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="SubOrg Settings" icon="layer-group" href="/configuration/suborg-settings">
+    Override org settings for groups of repositories
+  </Card>
+  
+  <Card title="Repo Settings" icon="file-code" href="/configuration/repo-settings">
+    Override settings for specific repositories
+  </Card>
+  
+  <Card title="Configuration Hierarchy" icon="sitemap" href="/configuration/hierarchy">
+    Learn how settings are merged
+  </Card>
+  
+  <Card title="Sample Settings" icon="file" href="https://github.com/github/safe-settings/blob/main/docs/sample-settings/settings.yml">
+    View complete sample file
+  </Card>
+</CardGroup>

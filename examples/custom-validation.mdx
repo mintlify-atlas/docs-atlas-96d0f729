@@ -1,0 +1,675 @@
+---
+title: Custom Validation Examples
+description: Real-world examples of configvalidators and overridevalidators to enforce custom policies and prevent misconfigurations
+---
+
+Custom validators allow you to enforce organization-specific policies that go beyond what GitHub's native settings provide. Safe Settings supports two types of validators: **configvalidators** (validate settings on their own) and **overridevalidators** (validate when settings are overridden).
+
+## Validation Types
+
+<CardGroup cols={2}>
+  <Card title="Config Validators" icon="check">
+    Validate a setting by itself, regardless of context.
+    
+    **Example**: "No collaborator can have admin permission"
+  </Card>
+  
+  <Card title="Override Validators" icon="shield">
+    Validate when a lower-level config overrides a higher-level config.
+    
+    **Example**: "Required approvals cannot be decreased"
+  </Card>
+</CardGroup>
+
+## Basic Config Validator
+
+Validate settings on their own, without considering overrides:
+
+```yaml deployment-settings.yml
+configvalidators:
+  - plugin: collaborators
+    error: |
+      Admin permission cannot be assigned to collaborators.
+      Use teams for admin access instead.
+    script: |
+      console.log(`Validating collaborator: ${JSON.stringify(baseconfig)}`)
+      return baseconfig.permission !== 'admin'
+```
+
+**How it works**:
+- The `baseconfig` variable contains the collaborator setting being validated
+- Return `true` if validation passes, `false` if it fails
+- The `error` message is shown in PR checks and logs when validation fails
+- This validator runs every time a collaborator is configured
+
+## Basic Override Validator
+
+Validate when settings are overridden at lower levels:
+
+```yaml deployment-settings.yml
+overridevalidators:
+  - plugin: branches
+    error: |
+      Branch protection required_approving_review_count cannot be decreased.
+      Org requires 2 approvals, but override specifies fewer.
+    script: |
+      console.log(`Base config: ${JSON.stringify(baseconfig)}`)
+      console.log(`Override config: ${JSON.stringify(overrideconfig)}`)
+      
+      // Check if both configs have review requirements
+      const baseReviews = baseconfig.protection?.required_pull_request_reviews
+      const overrideReviews = overrideconfig.protection?.required_pull_request_reviews
+      
+      if (baseReviews?.required_approving_review_count && 
+          overrideReviews?.required_approving_review_count) {
+        return overrideReviews.required_approving_review_count >= 
+               baseReviews.required_approving_review_count
+      }
+      
+      return true
+```
+
+**How it works**:
+- `baseconfig` contains the setting from org/suborg level
+- `overrideconfig` contains the setting from suborg/repo level that's overriding it
+- Return `true` to allow the override, `false` to reject it
+- This only runs when a setting is being overridden
+
+## Real-World Examples
+
+### Example 1: Enforce Team-Based Access
+
+```yaml deployment-settings.yml
+configvalidators:
+  # Prevent admin access via collaborators
+  - plugin: collaborators
+    error: |
+      ERROR: Admin permission cannot be granted to individual collaborators.
+      
+      Admin access must be granted through teams for better auditability.
+      Create a team and add the user to that team instead.
+    script: |
+      if (baseconfig.permission === 'admin') {
+        console.log(`BLOCKED: Attempted to give admin to ${baseconfig.username}`)
+        return false
+      }
+      return true
+  
+  # Prevent push access to contractors
+  - plugin: collaborators
+    error: |
+      ERROR: Contractor accounts cannot have push access.
+      
+      Username "${baseconfig.username}" appears to be a contractor.
+      Contractors must be granted pull (read) access only.
+    script: |
+      // Contractor naming convention: contractor-*
+      const isContractor = baseconfig.username?.startsWith('contractor-')
+      const hasPushOrAdmin = ['push', 'admin'].includes(baseconfig.permission)
+      
+      if (isContractor && hasPushOrAdmin) {
+        console.log(`BLOCKED: Contractor ${baseconfig.username} requesting ${baseconfig.permission}`)
+        return false
+      }
+      return true
+```
+
+### Example 2: Branch Protection Requirements
+
+<Tabs>
+  <Tab title="Prevent Weakening Protection">
+    ```yaml deployment-settings.yml
+    overridevalidators:
+      # Cannot reduce required approvals
+      - plugin: branches
+        error: |
+          ERROR: Cannot reduce required approval count.
+          
+          Organization requires ${baseconfig.protection?.required_pull_request_reviews?.required_approving_review_count} approvals,
+          but override attempts to set ${overrideconfig.protection?.required_pull_request_reviews?.required_approving_review_count} approvals.
+          
+          You can increase the requirement but not decrease it.
+        script: |
+          const baseReviews = baseconfig.protection?.required_pull_request_reviews
+          const overrideReviews = overrideconfig.protection?.required_pull_request_reviews
+          
+          if (baseReviews?.required_approving_review_count && 
+              overrideReviews?.required_approving_review_count) {
+            const allowed = overrideReviews.required_approving_review_count >= 
+                          baseReviews.required_approving_review_count
+            
+            if (!allowed) {
+              console.log(`BLOCKED: Attempt to reduce approvals from ${baseReviews.required_approving_review_count} to ${overrideReviews.required_approving_review_count}`)
+            }
+            return allowed
+          }
+          return true
+      
+      # Cannot disable enforce_admins if it's enabled
+      - plugin: branches
+        error: |
+          ERROR: Cannot disable enforce_admins.
+          
+          Organization policy requires admin enforcement.
+          Repositories cannot opt out of this requirement.
+        script: |
+          const baseEnforce = baseconfig.protection?.enforce_admins
+          const overrideEnforce = overrideconfig.protection?.enforce_admins
+          
+          // If org enables enforce_admins, repos cannot disable it
+          if (baseEnforce === true && overrideEnforce === false) {
+            console.log('BLOCKED: Attempt to disable enforce_admins')
+            return false
+          }
+          return true
+      
+      # Cannot remove required status checks
+      - plugin: branches
+        error: |
+          ERROR: Cannot remove required status checks.
+          
+          Organization requires these checks: ${JSON.stringify(baseconfig.protection?.required_status_checks?.contexts)}
+          Override must include all org-level checks.
+        script: |
+          const baseChecks = baseconfig.protection?.required_status_checks?.contexts || []
+          const overrideChecks = overrideconfig.protection?.required_status_checks?.contexts || []
+          
+          // Filter out EXTERNALLY_DEFINED placeholder
+          const requiredChecks = baseChecks.filter(c => c !== '{{EXTERNALLY_DEFINED}}')
+          
+          // All base checks must be present in override
+          const allPresent = requiredChecks.every(check => overrideChecks.includes(check))
+          
+          if (!allPresent) {
+            const missing = requiredChecks.filter(c => !overrideChecks.includes(c))
+            console.log(`BLOCKED: Missing required checks: ${missing.join(', ')}`)
+          }
+          return allPresent
+    ```
+  </Tab>
+  
+  <Tab title="Enforce Minimum Protection">
+    ```yaml deployment-settings.yml
+    configvalidators:
+      # All repos must have branch protection
+      - plugin: branches
+        error: |
+          ERROR: All repositories must have branch protection on the default branch.
+          
+          At minimum, you must configure:
+          - required_pull_request_reviews with required_approving_review_count >= 1
+          - required_status_checks with strict: true
+        script: |
+          // Check if this is the default branch
+          if (baseconfig.name !== 'default') {
+            return true  // Only validate default branch
+          }
+          
+          const protection = baseconfig.protection
+          if (!protection) {
+            console.log('BLOCKED: No branch protection configured')
+            return false
+          }
+          
+          const reviews = protection.required_pull_request_reviews
+          if (!reviews || reviews.required_approving_review_count < 1) {
+            console.log('BLOCKED: Must require at least 1 approval')
+            return false
+          }
+          
+          const statusChecks = protection.required_status_checks
+          if (!statusChecks || statusChecks.strict !== true) {
+            console.log('BLOCKED: Must require strict status checks')
+            return false
+          }
+          
+          return true
+    ```
+  </Tab>
+</Tabs>
+
+### Example 3: Security and Compliance
+
+```yaml deployment-settings.yml
+configvalidators:
+  # Ensure vulnerability alerts are enabled
+  - plugin: repository
+    error: |
+      ERROR: Security vulnerability alerts must be enabled.
+      
+      All repositories must have:
+      - enableVulnerabilityAlerts: true
+      - enableAutomatedSecurityFixes: true
+    script: |
+      const security = baseconfig.security
+      
+      if (!security?.enableVulnerabilityAlerts) {
+        console.log('BLOCKED: Vulnerability alerts not enabled')
+        return false
+      }
+      
+      if (!security?.enableAutomatedSecurityFixes) {
+        console.log('BLOCKED: Automated security fixes not enabled')
+        return false
+      }
+      
+      return true
+  
+  # Prevent public repositories without approval
+  - plugin: repository
+    error: |
+      ERROR: Public repositories require security team approval.
+      
+      To create a public repository:
+      1. Get approval from security team
+      2. Add a comment in your PR: "Approved by: @security-team"
+      3. Security team will merge after review
+    script: |
+      // Block public repos unless explicitly allowed
+      if (baseconfig.private === false || baseconfig.visibility === 'public') {
+        console.log('BLOCKED: Attempt to create public repository')
+        // In practice, you'd check for approval in PR comments
+        return false
+      }
+      return true
+
+overridevalidators:
+  # Cannot make a private repo public at lower levels
+  - plugin: repository
+    error: |
+      ERROR: Cannot change repository visibility from private to public.
+      
+      Organization policy sets repositories as private.
+      Contact security team to request an exception.
+    script: |
+      const baseIsPrivate = baseconfig.private === true || baseconfig.visibility === 'private'
+      const overrideIsPublic = overrideconfig.private === false || overrideconfig.visibility === 'public'
+      
+      if (baseIsPrivate && overrideIsPublic) {
+        console.log('BLOCKED: Attempt to make private repo public')
+        return false
+      }
+      return true
+```
+
+### Example 4: Naming Conventions
+
+```yaml deployment-settings.yml
+configvalidators:
+  # Enforce label naming conventions
+  - plugin: labels
+    error: |
+      ERROR: Label names must be lowercase and use hyphens.
+      
+      Label "${baseconfig.name}" is invalid.
+      Examples of valid names: "bug", "help-wanted", "good-first-issue"
+    script: |
+      const validPattern = /^[a-z0-9]+(-[a-z0-9]+)*$/
+      
+      if (!validPattern.test(baseconfig.name)) {
+        console.log(`BLOCKED: Invalid label name: ${baseconfig.name}`)
+        return false
+      }
+      return true
+  
+  # Enforce label colors
+  - plugin: labels
+    error: |
+      ERROR: Label color must be a valid 6-character hex code.
+      
+      Label "${baseconfig.name}" has invalid color: "${baseconfig.color}"
+      Example: "FF0000" or "#FF0000"
+    script: |
+      const color = baseconfig.color?.replace('#', '')
+      const validColor = /^[0-9A-Fa-f]{6}$/
+      
+      if (!validColor.test(color)) {
+        console.log(`BLOCKED: Invalid color ${baseconfig.color} for label ${baseconfig.name}`)
+        return false
+      }
+      return true
+```
+
+### Example 5: Team Permission Policies
+
+```yaml deployment-settings.yml
+overridevalidators:
+  # Prevent giving contractors admin access
+  - plugin: teams
+    error: |
+      ERROR: Contractor teams cannot be granted admin permission.
+      
+      Team "${overrideconfig.name}" appears to be a contractor team.
+      Contractor teams are limited to pull or push permissions.
+    script: |
+      const isContractorTeam = overrideconfig.name?.includes('contractor') || 
+                              overrideconfig.name?.includes('vendor')
+      
+      if (isContractorTeam && overrideconfig.permission === 'admin') {
+        console.log(`BLOCKED: Contractor team ${overrideconfig.name} requesting admin`)
+        return false
+      }
+      return true
+  
+  # Cannot reduce team permissions
+  - plugin: teams
+    error: |
+      ERROR: Cannot reduce team permissions.
+      
+      Team "${baseconfig.name}" has ${baseconfig.permission} at org level.
+      Cannot reduce to ${overrideconfig.permission} at suborg/repo level.
+    script: |
+      const permLevels = { pull: 1, push: 2, admin: 3 }
+      
+      const baseLevel = permLevels[baseconfig.permission] || 0
+      const overrideLevel = permLevels[overrideconfig.permission] || 0
+      
+      if (overrideLevel < baseLevel) {
+        console.log(`BLOCKED: Reducing ${baseconfig.name} from ${baseconfig.permission} to ${overrideconfig.permission}`)
+        return false
+      }
+      return true
+```
+
+## Advanced Validation Patterns
+
+### Context-Aware Validation
+
+```yaml deployment-settings.yml
+overridevalidators:
+  # Allow relaxed rules for non-production repos
+  - plugin: branches
+    error: |
+      ERROR: Production repositories cannot reduce required approvals.
+      
+      This appears to be a production repo based on naming/topics.
+      Production repos must maintain org-level approval requirements.
+    script: |
+      // Determine if this is a production repo
+      const repoName = overrideconfig.repo_name || ''
+      const isProduction = repoName.includes('-prod') || 
+                          repoName.includes('-production') ||
+                          repoName.endsWith('prod')
+      
+      // If not production, allow flexibility
+      if (!isProduction) {
+        console.log(`Allowing override for non-prod repo: ${repoName}`)
+        return true
+      }
+      
+      // For production, enforce strict rules
+      const baseReviews = baseconfig.protection?.required_pull_request_reviews?.required_approving_review_count || 0
+      const overrideReviews = overrideconfig.protection?.required_pull_request_reviews?.required_approving_review_count || 0
+      
+      return overrideReviews >= baseReviews
+```
+
+### Multi-Field Validation
+
+```yaml deployment-settings.yml
+configvalidators:
+  # Ensure security settings are complete
+  - plugin: repository
+    error: |
+      ERROR: Incomplete security configuration.
+      
+      Private repositories must have:
+      - Vulnerability alerts enabled
+      - Automated security fixes enabled
+      - Branch protection on default branch
+    script: |
+      if (baseconfig.private !== true) {
+        return true  // Only validate private repos
+      }
+      
+      const hasVulnAlerts = baseconfig.security?.enableVulnerabilityAlerts
+      const hasAutoFixes = baseconfig.security?.enableAutomatedSecurityFixes
+      
+      if (!hasVulnAlerts || !hasAutoFixes) {
+        console.log('BLOCKED: Incomplete security settings')
+        return false
+      }
+      
+      return true
+```
+
+### Conditional Validation
+
+```yaml deployment-settings.yml
+overridevalidators:
+  # Allow emergency bypass with justification
+  - plugin: branches
+    error: |
+      ERROR: Reducing branch protection requires justification.
+      
+      To reduce required approvals, add a comment to your settings:
+      # JUSTIFICATION: <reason for reduction>
+      
+      Example:
+      # JUSTIFICATION: Experimental repo, team of 1
+    script: |
+      const baseReviews = baseconfig.protection?.required_pull_request_reviews?.required_approving_review_count || 0
+      const overrideReviews = overrideconfig.protection?.required_pull_request_reviews?.required_approving_review_count || 0
+      
+      if (overrideReviews < baseReviews) {
+        // In a real implementation, you'd check for a justification comment
+        // This is a simplified example
+        console.log('WARNING: Branch protection reduced - ensure justification exists')
+        
+        // For demo purposes, allow if reducing by only 1
+        return (baseReviews - overrideReviews) <= 1
+      }
+      
+      return true
+```
+
+## Complete Example
+
+A comprehensive deployment-settings.yml with multiple validators:
+
+```yaml deployment-settings.yml
+# Restrict which repos Safe Settings manages
+restrictedRepos:
+  exclude:
+    - admin
+    - .github
+    - safe-settings
+    - "*-archive"
+  include:
+    - "*"  # All others
+
+# Config validators - validate settings on their own
+configvalidators:
+  # Security: No admin access via collaborators
+  - plugin: collaborators
+    error: |
+      Admin permission cannot be assigned to individual collaborators.
+      Use teams for admin access instead.
+    script: |
+      console.log(`Checking collaborator ${baseconfig.username}`)
+      return baseconfig.permission !== 'admin'
+  
+  # Security: Vulnerability alerts must be enabled
+  - plugin: repository
+    error: |
+      All repositories must have vulnerability alerts enabled.
+    script: |
+      if (baseconfig.private === true) {
+        return baseconfig.security?.enableVulnerabilityAlerts === true
+      }
+      return true
+  
+  # Quality: Labels must follow conventions
+  - plugin: labels
+    error: |
+      Label "${baseconfig.name}" must be lowercase with hyphens only.
+    script: |
+      return /^[a-z0-9]+(-[a-z0-9]+)*$/.test(baseconfig.name)
+
+# Override validators - validate when settings are overridden
+overridevalidators:
+  # Security: Cannot reduce required approvals
+  - plugin: branches
+    error: |
+      Branch protection required_approving_review_count cannot be decreased.
+      Org requires ${baseconfig.protection?.required_pull_request_reviews?.required_approving_review_count},
+      override specifies ${overrideconfig.protection?.required_pull_request_reviews?.required_approving_review_count}.
+    script: |
+      const baseReviews = baseconfig.protection?.required_pull_request_reviews
+      const overrideReviews = overrideconfig.protection?.required_pull_request_reviews
+      
+      if (baseReviews?.required_approving_review_count && 
+          overrideReviews?.required_approving_review_count) {
+        return overrideReviews.required_approving_review_count >= 
+               baseReviews.required_approving_review_count
+      }
+      return true
+  
+  # Security: Cannot disable enforce_admins
+  - plugin: branches
+    error: |
+      Cannot disable enforce_admins when enabled at org level.
+    script: |
+      const baseEnforce = baseconfig.protection?.enforce_admins
+      const overrideEnforce = overrideconfig.protection?.enforce_admins
+      return !(baseEnforce === true && overrideEnforce === false)
+  
+  # Security: Cannot make private repos public
+  - plugin: repository
+    error: |
+      Cannot change repository from private to public.
+      Contact security team for exceptions.
+    script: |
+      const baseIsPrivate = baseconfig.private === true
+      const overrideIsPublic = overrideconfig.private === false || 
+                              overrideconfig.visibility === 'public'
+      return !(baseIsPrivate && overrideIsPublic)
+  
+  # Quality: Cannot reduce team permissions
+  - plugin: teams
+    error: |
+      Cannot reduce team permissions from org level.
+    script: |
+      const permLevels = { pull: 1, push: 2, admin: 3 }
+      const baseLevel = permLevels[baseconfig.permission] || 0
+      const overrideLevel = permLevels[overrideconfig.permission] || 0
+      return overrideLevel >= baseLevel
+```
+
+## Testing Validators
+
+When you create a PR with changed settings, Safe Settings runs in dry-run mode and executes all validators:
+
+<Steps>
+  <Step title="Create PR with changes">
+    Push your settings changes to a feature branch and create a PR to the default branch.
+  </Step>
+  
+  <Step title="Review validation results">
+    Safe Settings will comment on the PR showing:
+    - Which validators ran
+    - Which passed/failed
+    - Error messages for failed validators
+    - What changes would be applied if merged
+  </Step>
+  
+  <Step title="Fix validation errors">
+    Update your settings to fix any validation errors and push again.
+  </Step>
+  
+  <Step title="Merge when checks pass">
+    Once all validators pass, merge the PR to apply the settings.
+  </Step>
+</Steps>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Write clear error messages">
+    Include:
+    - What went wrong
+    - Why it's blocked
+    - How to fix it
+    
+    ```yaml
+    error: |
+      ERROR: Cannot reduce required approvals.
+      
+      WHY: Organization security policy requires minimum 2 approvals.
+      
+      FIX: Set required_approving_review_count to 2 or higher.
+    ```
+  </Accordion>
+  
+  <Accordion title="Log validation decisions">
+    Use `console.log()` to help debug:
+    
+    ```javascript
+    console.log(`Validating: ${baseconfig.name}`)
+    console.log(`Base: ${JSON.stringify(baseconfig)}`)
+    console.log(`Override: ${JSON.stringify(overrideconfig)}`)
+    ```
+  </Accordion>
+  
+  <Accordion title="Handle missing fields gracefully">
+    Use optional chaining and defaults:
+    
+    ```javascript
+    const reviews = baseconfig.protection?.required_pull_request_reviews?.required_approving_review_count || 0
+    ```
+  </Accordion>
+  
+  <Accordion title="Keep validators simple">
+    Each validator should check one thing. Multiple simple validators are better than one complex validator.
+  </Accordion>
+  
+  <Accordion title="Document exceptions">
+    If you allow exceptions, document them:
+    
+    ```javascript
+    // Allow experimental repos to bypass
+    if (baseconfig.name?.startsWith('experimental-')) {
+      console.log('Allowing exception for experimental repo')
+      return true
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Validator not running">
+    **Check**:
+    - Validator is in `deployment-settings.yml` at the root where Safe Settings runs
+    - Plugin name matches the setting type (`collaborators`, `teams`, `branches`, `repository`, `labels`)
+    - YAML syntax is valid (test with a YAML linter)
+  </Accordion>
+  
+  <Accordion title="Validator always fails">
+    **Debug**:
+    - Add `console.log()` statements to see what data you're receiving
+    - Check the Safe Settings logs or PR comments for your log output
+    - Verify field names match what's in baseconfig/overrideconfig
+    - Test your logic with sample data
+  </Accordion>
+  
+  <Accordion title="Override validator not triggering">
+    **Check**:
+    - Setting is actually being overridden (suborg/repo changes org setting)
+    - Plugin name is correct
+    - Both baseconfig and overrideconfig are checked (handle cases where either might be undefined)
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Multi-Level Config" icon="layer-group" href="/examples/multi-level-config">
+    Learn how to structure configs that validators will check
+  </Card>
+  
+  <Card title="Branch Protection" icon="shield" href="/examples/branch-protection">
+    See what branch protection settings you can validate
+  </Card>
+</CardGroup>

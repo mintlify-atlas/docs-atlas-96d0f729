@@ -1,0 +1,421 @@
+---
+title: Rulesets
+description: Configure repository and organization rulesets for advanced branch and tag protection
+---
+
+The `rulesets` section configures GitHub rulesets, which provide advanced protection for branches and tags. Rulesets offer more flexibility than traditional branch protection rules and can be applied at the organization or repository level.
+
+## Basic Configuration
+
+<ParamField path="name" type="string" required>
+  The name of the ruleset.
+  
+  ```yaml
+  rulesets:
+    - name: Production Protection
+  ```
+</ParamField>
+
+<ParamField path="target" type="string" required>
+  The target of the ruleset. Can be:
+  - `branch` - Apply rules to branches
+  - `tag` - Apply rules to tags
+  
+  ```yaml
+  rulesets:
+    - name: Production Protection
+      target: branch
+  ```
+</ParamField>
+
+<ParamField path="enforcement" type="string" required>
+  The enforcement level of the ruleset. `evaluate` allows admins to test rules before enforcing them.
+  - `disabled` - Ruleset is disabled
+  - `active` - Ruleset is actively enforced
+  - `evaluate` - Ruleset runs in evaluation mode (not enforced)
+  
+  ```yaml
+  rulesets:
+    - name: Production Protection
+      target: branch
+      enforcement: active
+  ```
+</ParamField>
+
+## Bypass Actors
+
+<ParamField path="bypass_actors" type="array">
+  The actors that can bypass the rules in this ruleset.
+  
+  <ParamField path="actor_id" type="number" required>
+    The ID of the actor.
+  </ParamField>
+  
+  <ParamField path="actor_type" type="string" required>
+    The type of actor that can bypass a ruleset:
+    - `RepositoryRole` - A repository role (e.g., maintain, write)
+    - `Team` - A team ID
+    - `Integration` - A GitHub App installation ID
+    - `OrganizationAdmin` - Organization administrators (use actor_id: 1)
+  </ParamField>
+  
+  <ParamField path="bypass_mode" type="string" required>
+    When the specified actor can bypass the ruleset:
+    - `always` - Can always bypass
+    - `pull_request` - Can only bypass rules on pull requests
+  </ParamField>
+  
+  ```yaml
+  rulesets:
+    - name: Production Protection
+      target: branch
+      enforcement: active
+      bypass_actors:
+        - actor_id: 1
+          actor_type: OrganizationAdmin
+          bypass_mode: always
+        - actor_id: 1234
+          actor_type: Team
+          bypass_mode: pull_request
+  ```
+</ParamField>
+
+## Conditions
+
+<ParamField path="conditions" type="object">
+  Conditions that determine which refs the ruleset applies to.
+  
+  <ParamField path="conditions.ref_name" type="object">
+    Parameters for a repository ruleset ref name condition.
+    
+    <ParamField path="include" type="array" required>
+      Array of ref names or patterns to include. One of these patterns must match for the condition to pass. Also accepts:
+      - `~DEFAULT_BRANCH` - The repository's default branch
+      - `~ALL` - All branches or tags
+    </ParamField>
+    
+    <ParamField path="exclude" type="array">
+      Array of ref names or patterns to exclude. The condition will not pass if any of these patterns match.
+    </ParamField>
+  </ParamField>
+  
+  <ParamField path="conditions.repository_name" type="object">
+    Only available for organization-level rulesets. Parameters for repository name matching.
+    
+    <ParamField path="include" type="array" required>
+      Array of repository names or patterns to include. Also accepts `~ALL` to include all repositories.
+    </ParamField>
+    
+    <ParamField path="exclude" type="array">
+      Array of repository names or patterns to exclude.
+    </ParamField>
+    
+    <ParamField path="protected" type="boolean">
+      Whether renaming of target repositories is prevented.
+    </ParamField>
+  </ParamField>
+  
+  ```yaml
+  rulesets:
+    - name: Production Protection
+      target: branch
+      enforcement: active
+      conditions:
+        ref_name:
+          include:
+            - "~DEFAULT_BRANCH"
+            - "refs/heads/release/*"
+          exclude:
+            - "refs/heads/release/old"
+  ```
+</ParamField>
+
+## Rules
+
+<ParamField path="rules" type="array" required>
+  An array of rules to enforce. Each rule is an object with a `type` field and optional `parameters`.
+  
+  ### Basic Rules
+  
+  <ParamField path="type: creation" type="string">
+    Prevent users from creating matching refs.
+    
+    ```yaml
+    rules:
+      - type: creation
+    ```
+  </ParamField>
+  
+  <ParamField path="type: update" type="string">
+    Prevent users from updating matching refs.
+    
+    ```yaml
+    rules:
+      - type: update
+        parameters:
+          update_allows_fetch_and_merge: true
+    ```
+  </ParamField>
+  
+  <ParamField path="type: deletion" type="string">
+    Prevent users from deleting matching refs.
+    
+    ```yaml
+    rules:
+      - type: deletion
+    ```
+  </ParamField>
+  
+  <ParamField path="type: required_linear_history" type="string">
+    Prevent merge commits from being pushed to matching refs.
+    
+    ```yaml
+    rules:
+      - type: required_linear_history
+    ```
+  </ParamField>
+  
+  <ParamField path="type: required_signatures" type="string">
+    Require commits to be signed.
+    
+    ```yaml
+    rules:
+      - type: required_signatures
+    ```
+  </ParamField>
+  
+  ### Pull Request Rule
+  
+  <ParamField path="type: pull_request" type="string">
+    Require pull requests before merging.
+    
+    ```yaml
+    rules:
+      - type: pull_request
+        parameters:
+          dismiss_stale_reviews_on_push: true
+          require_code_owner_review: true
+          require_last_push_approval: true
+          required_approving_review_count: 1
+          required_review_thread_resolution: true
+    ```
+  </ParamField>
+  
+  ### Status Checks Rule
+  
+  <ParamField path="type: required_status_checks" type="string">
+    Require status checks to pass before merging.
+    
+    <ParamField path="parameters.strict_required_status_checks_policy" type="boolean">
+      Whether pull requests must be tested with the latest code.
+    </ParamField>
+    
+    <ParamField path="parameters.required_status_checks" type="array">
+      Array of status checks that must pass.
+      
+      Each item has:
+      - `context` (string, required) - The status check name
+      - `integration_id` (integer) - The GitHub App integration ID
+    </ParamField>
+    
+    ```yaml
+    rules:
+      - type: required_status_checks
+        parameters:
+          strict_required_status_checks_policy: true
+          required_status_checks:
+            - context: CodeQL
+              integration_id: 1234
+            - context: CI
+              integration_id: 5678
+    ```
+    
+    #### Using `{{EXTERNALLY_DEFINED}}`
+    
+    To allow status checks to be managed outside of Safe Settings, use the special override. This prevents Safe Settings from modifying status checks added manually.
+    
+    ```yaml
+    rules:
+      - type: required_status_checks
+        parameters:
+          strict_required_status_checks_policy: true
+          required_status_checks: '{{EXTERNALLY_DEFINED}}'
+    ```
+  </ParamField>
+  
+  ### Workflows Rule
+  
+  <ParamField path="type: workflows" type="string">
+    Require specific workflows to pass before merging.
+    
+    ```yaml
+    rules:
+      - type: workflows
+        parameters:
+          workflows:
+            - path: .github/workflows/ci.yml
+              repository_id: 123456
+              ref: refs/heads/main
+    ```
+  </ParamField>
+  
+  ### Required Deployments Rule
+  
+  <ParamField path="type: required_deployments" type="string">
+    Require deployments to specific environments to succeed before merging.
+    
+    ```yaml
+    rules:
+      - type: required_deployments
+        parameters:
+          required_deployment_environments:
+            - staging
+            - production
+    ```
+  </ParamField>
+  
+  ### Pattern Rules
+  
+  <ParamField path="type: commit_message_pattern" type="string">
+    Require commit messages to match a pattern.
+    
+    ```yaml
+    rules:
+      - type: commit_message_pattern
+        parameters:
+          name: Commit message pattern
+          negate: false
+          operator: starts_with
+          pattern: "feat:"
+    ```
+  </ParamField>
+  
+  <ParamField path="type: commit_author_email_pattern" type="string">
+    Require commit author emails to match a pattern.
+    
+    ```yaml
+    rules:
+      - type: commit_author_email_pattern
+        parameters:
+          name: Author email pattern
+          negate: false
+          operator: regex
+          pattern: "^.*@example.com$"
+    ```
+  </ParamField>
+  
+  <ParamField path="type: committer_email_pattern" type="string">
+    Require committer emails to match a pattern.
+    
+    ```yaml
+    rules:
+      - type: committer_email_pattern
+        parameters:
+          name: Committer email pattern
+          negate: false
+          operator: regex
+          pattern: "^.*@example.com$"
+    ```
+  </ParamField>
+  
+  <ParamField path="type: branch_name_pattern" type="string">
+    Require branch names to match a pattern.
+    
+    ```yaml
+    rules:
+      - type: branch_name_pattern
+        parameters:
+          name: Branch name pattern
+          negate: false
+          operator: regex
+          pattern: "^(feature|bugfix)/.*"
+    ```
+  </ParamField>
+  
+  <ParamField path="type: tag_name_pattern" type="string">
+    Require tag names to match a pattern.
+    
+    ```yaml
+    rules:
+      - type: tag_name_pattern
+        parameters:
+          name: Tag name pattern
+          negate: false
+          operator: regex
+          pattern: "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+    ```
+  </ParamField>
+</ParamField>
+
+## Complete Example
+
+```yaml
+rulesets:
+  - name: Production Branch Protection
+    target: branch
+    enforcement: active
+    
+    bypass_actors:
+      - actor_id: 1
+        actor_type: OrganizationAdmin
+        bypass_mode: always
+      - actor_id: 5678
+        actor_type: Team
+        bypass_mode: pull_request
+    
+    conditions:
+      ref_name:
+        include:
+          - "~DEFAULT_BRANCH"
+          - "refs/heads/release/*"
+        exclude:
+          - "refs/heads/release/old"
+    
+    rules:
+      - type: creation
+      - type: update
+        parameters:
+          update_allows_fetch_and_merge: true
+      - type: deletion
+      - type: required_linear_history
+      - type: required_signatures
+      
+      - type: pull_request
+        parameters:
+          dismiss_stale_reviews_on_push: true
+          require_code_owner_review: true
+          require_last_push_approval: true
+          required_approving_review_count: 2
+          required_review_thread_resolution: true
+      
+      - type: required_status_checks
+        parameters:
+          strict_required_status_checks_policy: true
+          required_status_checks:
+            - context: CodeQL
+              integration_id: 1234
+            - context: CI
+              integration_id: 5678
+      
+      - type: commit_message_pattern
+        parameters:
+          name: Conventional commits
+          negate: false
+          operator: regex
+          pattern: "^(feat|fix|docs|chore):"
+```
+
+## Repository vs Organization Rulesets
+
+Rulesets can be defined at two levels:
+
+- **Repository level**: Defined in repository settings files, applies only to that repository
+- **Organization level**: Defined in org-level settings files, can target multiple repositories using `conditions.repository_name`
+
+Safe Settings automatically determines the scope based on where the ruleset is defined.
+
+## API Reference
+
+For more details, see GitHub's REST API documentation:
+- [Create an organization repository ruleset](https://docs.github.com/en/rest/orgs/rules#create-an-organization-repository-ruleset)
+- [Create a repository ruleset](https://docs.github.com/en/rest/repos/rules#create-a-repository-ruleset)

@@ -1,0 +1,132 @@
+---
+title: API Reference Overview
+description: Understanding Safe Settings API surface, GitHub App permissions, and integration points
+---
+
+# API Reference Overview
+
+Safe Settings operates as a GitHub App that listens to webhook events and manages repository and organization settings through the GitHub API. This section provides comprehensive reference documentation for configuring and understanding the app's API surface.
+
+## GitHub App Integration
+
+Safe Settings functions as a GitHub App that requires specific permissions and subscribes to webhook events to automatically synchronize settings across your organization.
+
+### Authentication
+
+The app authenticates using three required environment variables:
+
+- **APP_ID**: The unique identifier for your GitHub App
+- **WEBHOOK_SECRET**: Secret used to verify webhook payloads from GitHub
+- **PRIVATE_KEY** or **PRIVATE_KEY_PATH**: Private key for authenticating API requests
+
+<Note>
+`PRIVATE_KEY` (base64-encoded key content) takes precedence over `PRIVATE_KEY_PATH` (file path to key).
+</Note>
+
+## GitHub App Permissions
+
+Safe Settings requires the following permissions to function properly:
+
+### Repository Permissions
+
+| Permission | Access Level | Purpose |
+|------------|--------------|----------|
+| Actions | Read | Read workflows and environments (for private/internal repos) |
+| Administration | Read & Write | Manage repository settings, teams, and collaborators |
+| Checks | Read & Write | Create and update check runs for validation |
+| Commit statuses | Read & Write | Update commit statuses |
+| Contents | Read & Write | Read configuration files and manage branches |
+| Custom properties | Read & Write | Manage repository custom properties |
+| Environments | Read & Write | Manage deployment environments |
+| Issues | Read & Write | Create error issues when sync fails |
+| Metadata | Read | Access repository metadata |
+| Pull requests | Read & Write | Create PR comments and manage pull requests |
+| Variables | Read & Write | Manage repository and organization action variables |
+
+### Organization Permissions
+
+| Permission | Access Level | Purpose |
+|------------|--------------|----------|
+| Administration | Read & Write | Manage organization-level settings |
+| Custom properties | Admin | Full control over organization custom properties |
+| Members | Read & Write | Manage organization members and teams |
+
+## API Operations
+
+Safe Settings performs several types of operations through the GitHub API:
+
+### Configuration Reading
+
+- Reads settings from the admin repository (default: `admin`)
+- Supports both organization-wide and repository-specific configurations
+- Configuration files are in YAML format
+
+### Settings Synchronization
+
+The app synchronizes various GitHub settings including:
+
+- **Repository Settings**: Name, description, visibility, features
+- **Branch Protection**: Protection rules and rulesets
+- **Teams & Collaborators**: Access control and permissions
+- **Labels**: Issue and PR labels
+- **Environments**: Deployment environments and protection rules
+- **Custom Properties**: Repository and organization custom properties
+- **Variables**: Repository and organization action variables
+- **Autolinks**: Custom autolink references
+
+### Validation & Checks
+
+For pull requests in the admin repository, Safe Settings creates check runs to validate configuration changes before they are merged.
+
+### Error Handling
+
+When enabled, the app can:
+
+- Create issues in the admin repository for sync errors (via `CREATE_ERROR_ISSUE`)
+- Post comments on pull requests with validation results (via `CREATE_PR_COMMENT`)
+
+## Configuration Files
+
+Safe Settings uses two types of configuration files:
+
+1. **Global Settings** (`settings.yml`): Organization-wide settings applied to all repositories
+2. **Repository Settings** (`repos/<repo-name>.yml`): Repository-specific overrides and settings
+3. **Sub-organization Settings** (`suborgs/<suborg-name>.yml`): Settings for repository groups
+4. **Deployment Config** (`deployment-settings.yml`): Deployment-time configuration (filesystem only)
+
+## Rate Limiting
+
+As a GitHub App, Safe Settings is subject to GitHub's rate limits:
+
+- **REST API**: 5,000 requests per hour per installation
+- **GraphQL API**: 5,000 points per hour per installation
+
+The app automatically handles rate limiting through the Octokit client.
+
+## Proxy Support
+
+Safe Settings supports HTTP/HTTPS proxies through environment variables:
+
+- Automatically detects `http_proxy` and `https_proxy` environment variables
+- Uses the `proxy-from-env` package for proxy configuration
+- Particularly useful in corporate or AWS Lambda environments
+
+## GitHub Enterprise Server
+
+For GitHub Enterprise Server deployments, configure:
+
+- **GHE_HOST**: Your GitHub Enterprise Server hostname (e.g., `github.company.com`)
+- **GHE_PROTOCOL**: Protocol to use (default: `https`)
+
+These settings automatically adjust the API base URL for your enterprise instance.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Environment Variables" icon="sliders" href="/api/environment-variables">
+    Complete reference of all configuration environment variables
+  </Card>
+  <Card title="Webhook Events" icon="webhook" href="/api/webhook-events">
+    Detailed list of GitHub webhook events and their handlers
+  </Card>
+</CardGroup>

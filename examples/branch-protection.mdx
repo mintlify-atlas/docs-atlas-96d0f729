@@ -1,0 +1,531 @@
+---
+title: Branch Protection Examples
+description: Real-world examples of branch protection rules with different security requirements for various environments and team workflows
+---
+
+Branch protection rules are critical for maintaining code quality and security. This guide shows practical examples for different security levels and workflows.
+
+## Understanding Branch Protection
+
+Branch protection in Safe Settings supports:
+- Pull request review requirements
+- Status check requirements
+- Admin enforcement
+- Push restrictions
+- Special handling for the default branch using `name: default`
+
+## Basic Patterns
+
+<Tabs>
+  <Tab title="Standard Protection">
+    ```yaml
+    branches:
+      - name: default
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 2
+            dismiss_stale_reviews: true
+            require_code_owner_reviews: true
+            require_last_push_approval: true
+          
+          required_status_checks:
+            strict: true
+            contexts:
+              - "ci/tests"
+              - "ci/lint"
+          
+          enforce_admins: true
+          
+          restrictions:
+            apps: []
+            users: []
+            teams: []
+    ```
+    
+    **Use case**: Most production repositories
+    - Requires 2 approvals
+    - CODEOWNERS must approve
+    - Author cannot approve their own PR
+    - All CI checks must pass
+    - Branch must be up to date
+  </Tab>
+  
+  <Tab title="Relaxed (Development)">
+    ```yaml
+    branches:
+      - name: default
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 1
+            dismiss_stale_reviews: false
+            require_code_owner_reviews: false
+            require_last_push_approval: false
+          
+          required_status_checks:
+            strict: false
+            contexts: []
+          
+          enforce_admins: false
+          
+          restrictions:
+            apps: []
+            users: []
+            teams: []
+    ```
+    
+    **Use case**: Development or experimental repositories
+    - Only 1 approval needed
+    - More flexible for rapid iteration
+    - Admin bypass allowed
+  </Tab>
+  
+  <Tab title="Strict (Security-Critical)">
+    ```yaml
+    branches:
+      - name: default
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 3
+            dismiss_stale_reviews: true
+            require_code_owner_reviews: true
+            require_last_push_approval: true
+            dismissal_restrictions:
+              teams:
+                - security-team
+                - platform-leads
+          
+          required_status_checks:
+            strict: true
+            contexts:
+              - "ci/tests"
+              - "ci/security-scan"
+              - "ci/compliance-check"
+          
+          enforce_admins: true
+          
+          restrictions:
+            teams:
+              - platform-leads
+    ```
+    
+    **Use case**: Production infrastructure, security-sensitive code
+    - Requires 3 approvals
+    - Only specific teams can dismiss reviews
+    - Multiple security checks required
+    - Only platform-leads can push directly
+    - Enforced for everyone including admins
+  </Tab>
+</Tabs>
+
+## Multiple Branch Patterns
+
+Protect different branches with different rules:
+
+```yaml
+branches:
+  # Production branch - strictest protection
+  - name: main
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 2
+        dismiss_stale_reviews: true
+        require_code_owner_reviews: true
+      required_status_checks:
+        strict: true
+        contexts:
+          - "ci/tests"
+          - "ci/security"
+      enforce_admins: true
+      restrictions:
+        apps: []
+        users: []
+        teams: []
+  
+  # Staging branch - moderate protection
+  - name: staging
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 1
+        dismiss_stale_reviews: true
+      required_status_checks:
+        strict: true
+        contexts:
+          - "ci/tests"
+      enforce_admins: false
+      restrictions:
+        apps: []
+        users: []
+        teams: []
+  
+  # Release branches - prevent deletion and force pushes
+  - name: "release/*"
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 2
+      required_status_checks:
+        strict: true
+        contexts:
+          - "ci/tests"
+      enforce_admins: true
+      restrictions:
+        teams:
+          - release-managers
+```
+
+## External Status Checks
+
+Use `{{EXTERNALLY_DEFINED}}` to allow status checks to be managed outside Safe Settings:
+
+<Tabs>
+  <Tab title="With External Checks">
+    ```yaml
+    branches:
+      - name: default
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 2
+            dismiss_stale_reviews: true
+          
+          required_status_checks:
+            strict: true
+            contexts:
+              - "{{EXTERNALLY_DEFINED}}"
+          
+          enforce_admins: true
+          restrictions:
+            apps: []
+            users: []
+            teams: []
+    ```
+    
+    **Use case**: When CI checks vary by repository or are managed by another system
+    
+    <Note>
+      When using `{{EXTERNALLY_DEFINED}}`, existing status checks in GitHub are preserved. New branch protection rules will be deployed with no status checks initially.
+    </Note>
+  </Tab>
+  
+  <Tab title="Mixed Checks">
+    ```yaml
+    branches:
+      - name: default
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 1
+            dismiss_stale_reviews: true
+          
+          required_status_checks:
+            strict: true
+            contexts:
+              - "ci/security-scan"  # Managed by Safe Settings
+              - "ci/compliance"      # Managed by Safe Settings
+              - "{{EXTERNALLY_DEFINED}}"  # Other checks managed elsewhere
+          
+          enforce_admins: false
+          restrictions:
+            apps: []
+            users: []
+            teams: []
+    ```
+    
+    **Use case**: Enforce some checks centrally while allowing repos to add their own
+  </Tab>
+</Tabs>
+
+<Warning>
+  When you remove `{{EXTERNALLY_DEFINED}}` from a configuration, all externally-defined status checks will be removed, and only checks defined in Safe Settings will remain.
+</Warning>
+
+## Advanced Patterns
+
+### Allow Bypass for Specific Teams
+
+```yaml
+branches:
+  - name: default
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 2
+        dismiss_stale_reviews: true
+        require_code_owner_reviews: true
+        bypass_pull_request_allowances:
+          teams:
+            - platform-team
+            - sre-team
+          apps:
+            - renovate  # Allow dependency update bot
+      
+      required_status_checks:
+        strict: true
+        contexts:
+          - "ci/tests"
+      
+      enforce_admins: true
+      restrictions:
+        apps: []
+        users: []
+        teams: []
+```
+
+**Use case**: Allow platform/SRE teams to bypass reviews for emergency fixes, and allow bots to auto-merge dependency updates.
+
+### Restrict Who Can Dismiss Reviews
+
+```yaml
+branches:
+  - name: default
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 2
+        dismiss_stale_reviews: true
+        require_code_owner_reviews: true
+        dismissal_restrictions:
+          teams:
+            - tech-leads
+            - security-team
+          users:
+            - octocat
+      
+      required_status_checks:
+        strict: true
+        contexts:
+          - "ci/tests"
+      
+      enforce_admins: true
+      restrictions:
+        apps: []
+        users: []
+        teams: []
+```
+
+**Use case**: Only senior team members can dismiss blocking reviews.
+
+### Restrict Direct Pushes
+
+```yaml
+branches:
+  - name: default
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 1
+        dismiss_stale_reviews: true
+      
+      required_status_checks:
+        strict: true
+        contexts:
+          - "ci/tests"
+      
+      enforce_admins: true
+      
+      restrictions:
+        # Only these teams can push directly (bypassing PR requirement)
+        teams:
+          - infrastructure
+        users: []
+        apps:
+          - github-actions  # Allow GitHub Actions to push
+```
+
+**Use case**: Force everyone except infrastructure team to use pull requests.
+
+## Multi-Level Configuration
+
+Combine org-level and repo-level branch protection:
+
+<CodeGroup>
+```yaml .github/settings.yml (Org Level)
+# Org-wide default: minimal protection
+branches:
+  - name: default
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 1
+        dismiss_stale_reviews: true
+      required_status_checks:
+        strict: true
+        contexts: []
+      enforce_admins: false
+      restrictions:
+        apps: []
+        users: []
+        teams: []
+```
+
+```yaml .github/suborgs/production-services.yml (Suborg Level)
+# Override for production services: stricter
+suborgrepos:
+  - api-*
+  - backend-*
+
+branches:
+  - name: default
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 2
+        dismiss_stale_reviews: true
+        require_code_owner_reviews: true
+      required_status_checks:
+        strict: true
+        contexts:
+          - "ci/tests"
+          - "ci/security"
+      enforce_admins: true
+      restrictions:
+        apps: []
+        users: []
+        teams: []
+```
+
+```yaml .github/repos/api-gateway.yml (Repo Level)
+# Override for critical gateway: maximum security
+branches:
+  - name: default
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 3
+        dismiss_stale_reviews: true
+        require_code_owner_reviews: true
+        require_last_push_approval: true
+        dismissal_restrictions:
+          teams:
+            - platform-leads
+      required_status_checks:
+        strict: true
+        contexts:
+          - "ci/tests"
+          - "ci/security"
+          - "ci/load-test"
+          - "ci/compliance"
+      enforce_admins: true
+      restrictions:
+        teams:
+          - platform-leads
+```
+</CodeGroup>
+
+**Result**: 
+- Most repos require 1 approval
+- Production services require 2 approvals + security checks
+- API Gateway requires 3 approvals + additional checks + push restrictions
+
+## Common Patterns by Team Size
+
+<CardGroup cols={2}>
+  <Card title="Small Team (2-5 people)" icon="users">
+    ```yaml
+    branches:
+      - name: default
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 1
+            dismiss_stale_reviews: false
+          required_status_checks:
+            strict: false
+            contexts: []
+          enforce_admins: false
+    ```
+    Lightweight process for small teams
+  </Card>
+  
+  <Card title="Medium Team (6-20 people)" icon="users">
+    ```yaml
+    branches:
+      - name: default
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 2
+            dismiss_stale_reviews: true
+            require_code_owner_reviews: true
+          required_status_checks:
+            strict: true
+            contexts:
+              - "ci/tests"
+          enforce_admins: false
+    ```
+    Balanced protection with CODEOWNERS
+  </Card>
+  
+  <Card title="Large Team (20+ people)" icon="users">
+    ```yaml
+    branches:
+      - name: default
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 2
+            dismiss_stale_reviews: true
+            require_code_owner_reviews: true
+            require_last_push_approval: true
+          required_status_checks:
+            strict: true
+            contexts:
+              - "ci/tests"
+              - "ci/security"
+          enforce_admins: true
+    ```
+    Strict controls for large organizations
+  </Card>
+  
+  <Card title="Enterprise" icon="building">
+    ```yaml
+    branches:
+      - name: default
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 3
+            dismiss_stale_reviews: true
+            require_code_owner_reviews: true
+            require_last_push_approval: true
+            dismissal_restrictions:
+              teams: [tech-leads]
+          required_status_checks:
+            strict: true
+            contexts:
+              - "ci/tests"
+              - "ci/security"
+              - "ci/compliance"
+          enforce_admins: true
+          restrictions:
+            teams: [release-team]
+    ```
+    Maximum security and compliance
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Branch protection not applying">
+    **Check**:
+    - Branch name matches correctly (use `default` for default branch)
+    - All required fields are present (set to `null` if not needed)
+    - No YAML syntax errors
+    - Repository is not in `restrictedRepos`
+  </Accordion>
+  
+  <Accordion title="enforce_admins causing issues">
+    **Solution**: Set `enforce_admins: false` to allow admins to bypass during emergencies. You can always re-enable after the emergency.
+  </Accordion>
+  
+  <Accordion title="Status checks failing">
+    **Check**:
+    - Status check names match exactly (case-sensitive)
+    - Checks are actually running on PRs
+    - Consider using `{{EXTERNALLY_DEFINED}}` for flexible checks
+  </Accordion>
+  
+  <Accordion title="Teams/users not found in restrictions">
+    **Solution**: Ensure team slugs and usernames are correct. Teams must have access to the repository first.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Team Management" icon="users" href="/examples/team-management">
+    Configure team permissions to work with branch protection
+  </Card>
+  
+  <Card title="Custom Validation" icon="check-circle" href="/examples/custom-validation">
+    Prevent repos from weakening branch protection
+  </Card>
+</CardGroup>

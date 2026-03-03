@@ -1,122 +1,124 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Safe Settings",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#2F81F7",
+    "light": "#5B9EF8",
+    "dark": "#1E5FCC"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/github/safe-settings"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/github/safe-settings"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
+              "introduction",
               "quickstart",
-              "development"
+              "how-it-works"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Deployment",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "deployment/overview",
+              "deployment/github-app",
+              "deployment/docker",
+              "deployment/aws-lambda",
+              "deployment/kubernetes",
+              "deployment/github-actions"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Configuration",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "configuration/overview",
+              "configuration/hierarchy",
+              "configuration/org-settings",
+              "configuration/suborg-settings",
+              "configuration/repo-settings",
+              "configuration/deployment-settings"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Settings Reference",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "settings/repository",
+              "settings/branches",
+              "settings/rulesets",
+              "settings/teams",
+              "settings/collaborators",
+              "settings/labels",
+              "settings/environments",
+              "settings/custom-properties",
+              "settings/autolinks",
+              "settings/milestones",
+              "settings/variables"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/custom-validators",
+              "advanced/status-checks",
+              "advanced/restricted-repos",
+              "advanced/drift-prevention",
+              "advanced/performance"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "operations/webhooks",
+              "operations/scheduled-sync",
+              "operations/error-handling",
+              "operations/monitoring"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "Examples",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Configuration Examples",
             "pages": [
-              "api-reference/introduction"
+              "examples/overview",
+              "examples/basic-setup",
+              "examples/branch-protection",
+              "examples/team-management",
+              "examples/multi-level-config",
+              "examples/custom-validation"
             ]
-          },
+          }
+        ]
+      },
+      {
+        "tab": "API",
+        "groups": [
           {
-            "group": "Endpoint examples",
+            "group": "Reference",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/overview",
+              "api/environment-variables",
+              "api/webhook-events"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

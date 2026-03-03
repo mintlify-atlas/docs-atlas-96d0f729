@@ -1,0 +1,546 @@
+---
+title: Webhook Events
+description: Complete reference for GitHub webhook events handled by Safe Settings and the actions triggered by each event
+---
+
+# Webhook Events
+
+Safe Settings listens to various GitHub webhook events to automatically synchronize repository and organization settings. This page documents all webhook events, when they trigger, and what actions Safe Settings takes in response.
+
+## Event Handling Overview
+
+Safe Settings uses an intelligent event handling system that:
+
+- **Filters bot actions**: Most events ignore actions performed by bots to prevent infinite loops
+- **Validates context**: Ensures events are from the admin repository or relevant repositories
+- **Synchronizes settings**: Triggers appropriate sync operations based on the event type
+- **Provides validation**: Creates check runs for pull requests to validate configuration changes
+
+## Repository Events
+
+### push
+
+**Triggers when**: Code is pushed to the default branch of the admin repository
+
+**Conditions**:
+- Only processes pushes to the admin repository (`ADMIN_REPO`)
+- Only processes pushes to the default branch
+
+**Actions taken**:
+
+| Changed Files | Action |
+|--------------|--------|
+| `settings.yml` modified or added | Full synchronization of all repositories in the organization |
+| Repository config files (`repos/*.yml`) modified or added | Selective synchronization of only the changed repositories |
+| Sub-organization config files (`suborgs/*.yml`) modified or added | Selective synchronization of repositories in the affected sub-organizations |
+| No relevant files changed | No action (returns early) |
+
+**Event payload location**: `index.js:250`
+
+```javascript
+robot.on('push', async context => {
+  // Syncs settings based on which files were modified
+})
+```
+
+---
+
+### create
+
+**Triggers when**: A branch or tag is created
+
+**Conditions**:
+- Ignores events triggered by bots
+- Only processes when the created ref is the default branch
+
+**Actions taken**:
+- Synchronizes settings for the repository where the branch was created
+- Useful for applying settings when a repository is initialized with a default branch
+
+**Event payload location**: `index.js:290`
+
+---
+
+### repository.created
+
+**Triggers when**: A new repository is created in the organization
+
+**Conditions**: None (always processes)
+
+**Actions taken**:
+- Synchronizes settings for the newly created repository
+- Applies organization-wide settings and any matching repository-specific or sub-org configurations
+
+**Event payload location**: `index.js:615`
+
+---
+
+### repository.edited
+
+**Triggers when**: Repository settings are manually changed through the GitHub UI or API
+
+**Conditions**: Ignores events triggered by bots
+
+**Actions taken**:
+- Re-synchronizes settings for the repository
+- Reverts any manual changes that conflict with Safe Settings configuration
+- Ensures repository settings match the configuration files
+
+**Event payload location**: `index.js:371`
+
+---
+
+### repository.renamed
+
+**Triggers when**: A repository is renamed
+
+**Conditions**: Only processes if `BLOCK_REPO_RENAME_BY_HUMAN` is set to `true`
+
+**Actions taken based on who triggered the rename**:
+
+| Triggered By | Action |
+|--------------|--------|
+| Human user | Reverts the repository name back to the original name defined in configuration |
+| Safe Settings bot | Allows the rename and updates the config file name from `old-name.yml` to `new-name.yml` |
+| Other bot | Attempts to rename the config file in the admin repository to match the new name |
+
+**Event payload location**: `index.js:385`
+
+<Warning>
+  Repository renames by humans are only blocked when `BLOCK_REPO_RENAME_BY_HUMAN=true`. By default, renames are not managed by Safe Settings.
+</Warning>
+
+---
+
+### repository.archived / repository.unarchived
+
+**Triggers when**: A repository is archived or unarchived
+
+**Conditions**: Ignores events triggered by bots
+
+**Actions taken**:
+- Synchronizes settings for the repository
+- Ensures archive status matches configuration
+
+**Event payload location**: `index.js:622` and `index.js:635`
+
+---
+
+## Branch & Protection Events
+
+### branch_protection_rule
+
+**Triggers when**: Branch protection rules are created, edited, or deleted
+
+**Conditions**: Ignores events triggered by bots
+
+**Actions taken**:
+- Re-synchronizes settings for the repository
+- Reverts manual changes to branch protection rules
+- Ensures branch protection matches configuration
+
+**Event payload location**: `index.js:307`
+
+**Supported actions**: `created`, `edited`, `deleted`
+
+---
+
+### repository_ruleset
+
+**Triggers when**: Repository rulesets are created, edited, or deleted
+
+**Conditions**: Ignores events triggered by bots
+
+**Actions taken based on ruleset scope**:
+
+| Ruleset Scope | Action |
+|---------------|--------|
+| Organization-level | Full synchronization of all repositories in the organization |
+| Repository-level | Synchronization of only the affected repository |
+
+**Event payload location**: `index.js:331`
+
+<Info>
+  Organization-level rulesets trigger a full sync because they affect multiple repositories.
+</Info>
+
+---
+
+## Team & Member Events
+
+### member
+
+**Triggers when**: A collaborator is added, removed, or has their permissions changed on a repository
+
+**Conditions**: Ignores events triggered by bots
+
+**Actions taken**:
+- Re-synchronizes settings for the repository
+- Ensures collaborator permissions match configuration
+
+**Event payload location**: `index.js:359` (part of `member_change_events`)
+
+---
+
+### team.added_to_repository
+
+**Triggers when**: A team is granted access to a repository
+
+**Conditions**: Ignores events triggered by bots
+
+**Actions taken**:
+- Re-synchronizes settings for the repository
+- Ensures team permissions match configuration
+
+**Event payload location**: `index.js:359` (part of `member_change_events`)
+
+---
+
+### team.removed_from_repository
+
+**Triggers when**: A team's access to a repository is revoked
+
+**Conditions**: Ignores events triggered by bots
+
+**Actions taken**:
+- Re-synchronizes settings for the repository
+- Ensures team permissions match configuration
+
+**Event payload location**: `index.js:359` (part of `member_change_events`)
+
+---
+
+### team.edited
+
+**Triggers when**: Team properties are modified
+
+**Conditions**: Ignores events triggered by bots
+
+**Actions taken**:
+- Re-synchronizes settings for repositories accessible by the team
+- Ensures team permissions match configuration
+
+**Event payload location**: `index.js:359` (part of `member_change_events`)
+
+---
+
+## Custom Properties Events
+
+### custom_property_values
+
+**Triggers when**: Custom property values are updated for a repository
+
+**Conditions**: Ignores events triggered by bots
+
+**Actions taken**:
+- Re-synchronizes settings for the repository
+- Ensures custom property values match configuration
+
+**Event payload location**: `index.js:319`
+
+<Info>
+  Custom properties are a GitHub feature that allows you to add custom metadata to repositories.
+</Info>
+
+---
+
+## Pull Request Events
+
+These events are specific to pull requests in the admin repository and provide validation functionality.
+
+### pull_request.opened
+
+**Triggers when**: A pull request is opened in the admin repository
+
+**Conditions**:
+- Only processes PRs in the admin repository
+- Only processes PRs not targeting the default branch
+
+**Actions taken**:
+- Creates a check run named "Safe-setting validator"
+- Prepares for validation of configuration changes
+
+**Event payload location**: `index.js:491`
+
+---
+
+### pull_request.reopened
+
+**Triggers when**: A previously closed pull request is reopened in the admin repository
+
+**Conditions**:
+- Only processes PRs in the admin repository
+- Only processes PRs not targeting the default branch
+
+**Actions taken**:
+- Creates a check run named "Safe-setting validator"
+- Prepares for validation of configuration changes
+
+**Event payload location**: `index.js:510`
+
+---
+
+## Check Events
+
+These events handle the validation workflow for pull requests.
+
+### check_suite.requested
+
+**Triggers when**: A check suite is requested for a pull request
+
+**Conditions**:
+- Only processes check suites in the admin repository
+- Only processes check suites for pull requests (not default branch)
+- Only processes if the event is associated with a pull request
+
+**Actions taken**:
+- Creates a check run named "Safe-setting validator" for the PR
+
+**Event payload location**: `index.js:463`
+
+---
+
+### check_suite.rerequested
+
+**Triggers when**: A check suite is manually re-requested
+
+**Conditions**: Must be in the admin repository
+
+**Actions taken**:
+- Creates a new check run for validation
+
+**Event payload location**: `index.js:531` and `index.js:536` (duplicate handlers)
+
+---
+
+### check_run.created
+
+**Triggers when**: A check run is created
+
+**Conditions**:
+- Only processes check runs named "Safe-setting validator"
+- Only processes check runs in the admin repository
+- Only processes check runs for pull requests
+- Ignores check runs that are already completed
+
+**Actions taken**:
+
+1. Updates check run status to "in_progress"
+2. Analyzes changed files in the pull request
+3. Performs validation based on changed files:
+
+| Changed Files | Validation Action |
+|--------------|-------------------|
+| `settings.yml` | Full NOP sync of all repositories |
+| Repository configs (`repos/*.yml`) | Selective NOP sync of changed repositories |
+| Sub-org configs (`suborgs/*.yml`) | Selective NOP sync of affected sub-organizations |
+| No Safe Settings files | Marks check as successful with no changes detected |
+
+4. Updates check run with results (success/failure)
+5. Posts PR comment with validation results if `CREATE_PR_COMMENT` is enabled
+
+**Event payload location**: `index.js:541`
+
+<Note>
+  NOP (No-Operation) mode runs validation without making actual changes, showing what would be changed.
+</Note>
+
+---
+
+## Event Subscription Configuration
+
+These events must be enabled in your GitHub App configuration (`app.yml`):
+
+```yaml
+default_events:
+  - branch_protection_rule
+  - check_run
+  - check_suite
+  - create
+  - custom_property_values
+  - member
+  - pull_request
+  - push
+  - repository
+  - repository_ruleset
+  - team
+```
+
+## Event Flow Diagrams
+
+### Configuration Change Flow
+
+```
+┌─────────────────────────────────────────────────┐
+│ Developer pushes to admin repo default branch   │
+└────────────────┬────────────────────────────────┘
+                 │
+                 ▼
+         ┌───────────────┐
+         │  push event   │
+         └───────┬───────┘
+                 │
+        ┌────────┴─────────┐
+        │                  │
+        ▼                  ▼
+┌──────────────┐   ┌──────────────────┐
+│ settings.yml │   │ repos/*.yml or   │
+│   changed    │   │ suborgs/*.yml    │
+└──────┬───────┘   └────────┬─────────┘
+       │                    │
+       ▼                    ▼
+┌──────────────┐   ┌──────────────────┐
+│  Full sync   │   │ Selective sync   │
+│ all repos    │   │ changed repos    │
+└──────────────┘   └──────────────────┘
+```
+
+### Pull Request Validation Flow
+
+```
+┌──────────────────────────────────────┐
+│ Developer opens PR in admin repo     │
+└──────────────┬───────────────────────┘
+               │
+               ▼
+     ┌───────────────────┐
+     │ pull_request.     │
+     │ opened event      │
+     └─────────┬─────────┘
+               │
+               ▼
+     ┌───────────────────┐
+     │ Create check run  │
+     └─────────┬─────────┘
+               │
+               ▼
+     ┌───────────────────┐
+     │ check_run.created │
+     │     event         │
+     └─────────┬─────────┘
+               │
+               ▼
+     ┌───────────────────┐
+     │ Run NOP sync to   │
+     │ validate changes  │
+     └─────────┬─────────┘
+               │
+      ┌────────┴─────────┐
+      │                  │
+      ▼                  ▼
+┌──────────┐      ┌──────────┐
+│ Success  │      │  Errors  │
+│ ✓ Check  │      │  ✗ Check │
+└──────────┘      └──────────┘
+      │                  │
+      └────────┬─────────┘
+               │
+               ▼
+     ┌───────────────────┐
+     │ Post PR comment   │
+     │ with results      │
+     │ (if enabled)      │
+     └───────────────────┘
+```
+
+### Manual Settings Change Flow
+
+```
+┌────────────────────────────────────┐
+│ User manually changes repo settings│
+│ through GitHub UI                  │
+└──────────────┬─────────────────────┘
+               │
+               ▼
+     ┌───────────────────┐
+     │ repository.edited │
+     │ or similar event  │
+     └─────────┬─────────┘
+               │
+               ▼
+     ┌───────────────────┐
+     │ Check if triggered│
+     │ by bot           │
+     └─────────┬─────────┘
+               │
+        ┌──────┴──────┐
+        │             │
+        ▼             ▼
+   ┌────────┐   ┌──────────┐
+   │  Bot   │   │  Human   │
+   │ Ignore │   │ Process  │
+   └────────┘   └─────┬────┘
+                      │
+                      ▼
+            ┌──────────────────┐
+            │ Sync repository  │
+            │ settings         │
+            └────────┬─────────┘
+                     │
+                     ▼
+            ┌──────────────────┐
+            │ Revert manual    │
+            │ changes to match │
+            │ configuration    │
+            └──────────────────┘
+```
+
+## Best Practices
+
+### Avoiding Event Loops
+
+Safe Settings prevents infinite event loops by:
+
+1. **Checking sender type**: Most handlers skip events where `sender.type === 'Bot'`
+2. **Checking app identity**: Some handlers verify the bot is not the Safe Settings app itself
+3. **Event filtering**: Only processes relevant events (e.g., default branch, admin repo)
+
+### Rate Limit Considerations
+
+Each webhook event may trigger multiple API calls. Consider:
+
+- **Batch changes**: Group multiple configuration changes in a single commit
+- **Use selective sync**: Modify repository-specific configs instead of `settings.yml` when possible
+- **Monitor rate limits**: Use `LOG_LEVEL=debug` to see API usage
+- **Scheduled sync**: Use `CRON` for periodic full syncs instead of relying solely on events
+
+### Testing Configuration Changes
+
+1. **Use pull requests**: Always make changes via PR to trigger validation
+2. **Check the check run**: Review the "Safe-setting validator" check results
+3. **Review PR comments**: Read the validation output in PR comments
+4. **Test with NOP**: Use `FULL_SYNC_NOP=true` to test without applying changes
+
+## Troubleshooting
+
+### Events Not Triggering
+
+- **Check webhook deliveries**: Visit your GitHub App settings → Advanced → Recent Deliveries
+- **Verify event subscriptions**: Ensure all required events are enabled in `app.yml`
+- **Check webhook URL**: Verify the webhook URL is correct and accessible
+- **Review logs**: Set `LOG_LEVEL=trace` to see detailed event processing
+
+### Check Runs Not Appearing
+
+- **Verify repository**: Check runs only appear in the admin repository
+- **Verify branch**: Check runs only trigger for non-default branches
+- **Verify PR association**: Check runs require an associated pull request
+- **Check permissions**: Ensure the app has `checks: write` permission
+
+### Settings Not Synchronizing
+
+- **Check bot filtering**: Ensure your app is recognized as the Safe Settings bot
+- **Verify permissions**: Ensure all required permissions are granted
+- **Check restricted repos**: Some repos may be in the `restrictedRepos` list
+- **Review error logs**: Look for API errors or permission issues in logs
+
+## Related Resources
+
+<CardGroup cols={2}>
+  <Card title="Environment Variables" icon="sliders" href="/api/environment-variables">
+    Configure event handling behavior with environment variables
+  </Card>
+  <Card title="GitHub App Permissions" icon="shield" href="/api/overview">
+    Learn about required permissions for webhook events
+  </Card>
+</CardGroup>

@@ -1,0 +1,383 @@
+---
+title: Repository Variables
+description: Configure GitHub Actions variables for repositories
+---
+
+The `variables` section configures repository-level variables for GitHub Actions. These variables can be referenced in workflow files and are useful for storing non-sensitive configuration values.
+
+## Basic Configuration
+
+<ParamField path="name" type="string" required>
+  The name of the variable. Variable names are automatically converted to uppercase to match GitHub's convention.
+  
+  ```yaml
+  variables:
+    - name: API_URL
+      value: https://api.example.com
+  ```
+</ParamField>
+
+<ParamField path="value" type="string" required>
+  The value of the variable. All values are stored as strings, even if they appear numeric or boolean in the YAML.
+  
+  ```yaml
+  variables:
+    - name: MAX_RETRIES
+      value: '3'
+  ```
+</ParamField>
+
+## Complete Examples
+
+### Basic Variables
+
+```yaml
+variables:
+  - name: API_URL
+    value: https://api.example.com
+  
+  - name: ENVIRONMENT
+    value: production
+  
+  - name: LOG_LEVEL
+    value: info
+```
+
+### Configuration Variables
+
+```yaml
+variables:
+  - name: BUILD_TIMEOUT
+    value: '30'
+  
+  - name: NODE_VERSION
+    value: '20'
+  
+  - name: CACHE_ENABLED
+    value: 'true'
+  
+  - name: MAX_PARALLEL_JOBS
+    value: '5'
+```
+
+### Service URLs
+
+```yaml
+variables:
+  - name: API_URL
+    value: https://api.example.com
+  
+  - name: DATABASE_URL
+    value: postgres://db.example.com:5432
+  
+  - name: REDIS_URL
+    value: redis://cache.example.com:6379
+  
+  - name: MONITORING_URL
+    value: https://monitoring.example.com
+```
+
+### Feature Flags
+
+```yaml
+variables:
+  - name: ENABLE_NEW_UI
+    value: 'true'
+  
+  - name: ENABLE_BETA_FEATURES
+    value: 'false'
+  
+  - name: ENABLE_DEBUG_MODE
+    value: 'false'
+```
+
+## Variable Name Normalization
+
+Variable names are automatically converted to uppercase by Safe Settings. This ensures consistency with GitHub's variable naming convention:
+
+```yaml
+variables:
+  # These are all treated as "API_URL"
+  - name: api_url
+    value: example.com
+  
+  - name: API_URL
+    value: example.com
+  
+  - name: Api_Url
+    value: example.com
+```
+
+## Using Variables in Workflows
+
+Once configured, reference variables in your workflow files using the `vars` context:
+
+```yaml
+name: Build and Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build
+        run: |
+          echo "Building for ${{ vars.ENVIRONMENT }}"
+          echo "API URL: ${{ vars.API_URL }}"
+          echo "Max retries: ${{ vars.MAX_RETRIES }}"
+      
+      - name: Deploy
+        env:
+          API_URL: ${{ vars.API_URL }}
+        run: |
+          ./deploy.sh
+```
+
+## Variables vs Secrets
+
+Understand when to use variables vs secrets:
+
+### Use Variables For:
+- Non-sensitive configuration values
+- Public API endpoints
+- Feature flags
+- Timeout values
+- Version numbers
+- Environment names
+
+```yaml
+variables:
+  - name: PUBLIC_API_URL
+    value: https://api.example.com
+  
+  - name: TIMEOUT_SECONDS
+    value: '30'
+```
+
+### Use Secrets For:
+- API keys and tokens
+- Passwords
+- Private keys
+- Access credentials
+- Any sensitive data
+
+**Note**: Secrets are not managed by Safe Settings - they must be configured separately through GitHub's UI or API.
+
+## Variable Value Types
+
+All variable values are stored as strings. If you need other types in workflows, convert them:
+
+### String Values (Default)
+
+```yaml
+variables:
+  - name: ENVIRONMENT
+    value: production
+```
+
+### Numeric Values (as Strings)
+
+```yaml
+variables:
+  - name: MAX_RETRIES
+    value: '3'  # Stored as string "3"
+```
+
+In workflows:
+```yaml
+steps:
+  - name: Use numeric value
+    run: |
+      RETRIES=${{ vars.MAX_RETRIES }}
+      echo "Retries: $RETRIES"
+```
+
+### Boolean Values (as Strings)
+
+```yaml
+variables:
+  - name: DEBUG_MODE
+    value: 'true'  # Stored as string "true"
+```
+
+In workflows:
+```yaml
+steps:
+  - name: Conditional on boolean
+    if: vars.DEBUG_MODE == 'true'
+    run: echo "Debug mode enabled"
+```
+
+### JSON Values (as Strings)
+
+```yaml
+variables:
+  - name: CONFIG
+    value: '{"timeout": 30, "retries": 3}'
+```
+
+In workflows:
+```yaml
+steps:
+  - name: Parse JSON
+    run: |
+      CONFIG='${{ vars.CONFIG }}'
+      TIMEOUT=$(echo $CONFIG | jq -r .timeout)
+      echo "Timeout: $TIMEOUT"
+```
+
+## Managing Variables
+
+### Creating Variables
+
+Add variables to your settings file:
+
+```yaml
+variables:
+  - name: NEW_VARIABLE
+    value: new_value
+```
+
+### Updating Variables
+
+Change the value in your settings file:
+
+```yaml
+variables:
+  - name: API_URL
+    value: https://new-api.example.com  # Updated value
+```
+
+### Deleting Variables
+
+Remove the variable from your settings file. Safe Settings will delete variables that are not defined in the configuration.
+
+## Best Practices
+
+1. **Use Uppercase Names**: Follow GitHub's convention
+   ```yaml
+   variables:
+     - name: API_URL  # Good
+       value: example.com
+   ```
+
+2. **Quote Numeric and Boolean Values**: Prevent YAML type conversion
+   ```yaml
+   variables:
+     - name: TIMEOUT
+       value: '30'  # Good - quoted
+     
+     - name: ENABLED
+       value: 'true'  # Good - quoted
+   ```
+
+3. **Use Descriptive Names**: Make variable purpose clear
+   ```yaml
+   variables:
+     - name: MAX_BUILD_TIMEOUT_MINUTES
+       value: '60'
+     
+     - name: PROD_API_BASE_URL
+       value: https://api.example.com
+   ```
+
+4. **Group Related Variables**: Organize by function or service
+   ```yaml
+   variables:
+     # API Configuration
+     - name: API_URL
+       value: https://api.example.com
+     - name: API_TIMEOUT
+       value: '30'
+     
+     # Build Configuration
+     - name: BUILD_NODE_VERSION
+       value: '20'
+     - name: BUILD_CACHE_ENABLED
+       value: 'true'
+   ```
+
+5. **Document Complex Values**: Add comments for clarity
+   ```yaml
+   variables:
+     # JSON config for multi-region deployment
+     - name: REGIONS_CONFIG
+       value: '{"us-east": "primary", "eu-west": "secondary"}'
+   ```
+
+## Environment-Specific Configuration
+
+Use repository variables for environment-specific settings:
+
+```yaml
+# In production repository settings
+variables:
+  - name: ENVIRONMENT
+    value: production
+  - name: API_URL
+    value: https://api.example.com
+  - name: LOG_LEVEL
+    value: warn
+
+# In staging repository settings
+variables:
+  - name: ENVIRONMENT
+    value: staging
+  - name: API_URL
+    value: https://staging-api.example.com
+  - name: LOG_LEVEL
+    value: debug
+```
+
+## Repository vs Environment Variables
+
+### Repository Variables
+
+- Defined in the `variables` section
+- Available to all workflows in the repository
+- Accessed with `${{ vars.VARIABLE_NAME }}`
+- Managed by Safe Settings
+
+### Environment Variables
+
+- Defined in the `environments` section under `variables`
+- Only available to jobs that use that environment
+- Accessed with `${{ vars.VARIABLE_NAME }}` when environment is specified
+- Also managed by Safe Settings
+
+See the [Environments](/settings/environments) documentation for environment-specific variables.
+
+## Viewing Variables
+
+To view variables in GitHub:
+
+1. Navigate to repository Settings
+2. Click "Secrets and variables" → "Actions"
+3. Click the "Variables" tab
+
+Or use the GitHub CLI:
+
+```bash
+gh api /repos/:owner/:repo/actions/variables
+```
+
+## Limitations
+
+- Variable names must be uppercase (automatically converted by Safe Settings)
+- Variable values are limited in size
+- Variables are plaintext and visible to anyone with repository access
+- Variables cannot contain sensitive information
+- The total number of variables per repository may be limited
+
+## API Reference
+
+For more details, see GitHub's REST API documentation:
+- [Create a repository variable](https://docs.github.com/en/rest/actions/variables#create-a-repository-variable)
+- [Update a repository variable](https://docs.github.com/en/rest/actions/variables#update-a-repository-variable)
+- [Delete a repository variable](https://docs.github.com/en/rest/actions/variables#delete-a-repository-variable)
+- [List repository variables](https://docs.github.com/en/rest/actions/variables#list-repository-variables)

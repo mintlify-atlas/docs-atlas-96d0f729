@@ -1,0 +1,747 @@
+---
+title: External Status Checks
+description: Allow status checks to be defined outside Safe Settings while maintaining policy-as-code for other branch protection settings
+---
+
+The `{{EXTERNALLY_DEFINED}}` placeholder allows you to manage status checks through the GitHub UI or other tools while Safe Settings manages all other branch protection and ruleset settings.
+
+## Why External Status Checks?
+
+Status check requirements often change frequently as CI/CD workflows evolve:
+
+- New test suites are added
+- Build configurations change
+- Third-party integrations are updated
+- Different teams manage different checks
+
+Hard-coding these in settings files requires:
+- Pull requests for every change
+- Approval workflows that slow down development
+- Coordination across multiple teams
+
+The `{{EXTERNALLY_DEFINED}}` placeholder solves this by delegating status check management while maintaining control over other critical settings like required approvals, admin enforcement, and review dismissal.
+
+## How It Works
+
+When Safe Settings encounters `{{EXTERNALLY_DEFINED}}`:
+
+1. **Initial deployment**: Creates the rule/protection with no status checks
+2. **Existing rules**: Preserves status checks already configured in GitHub
+3. **Manual updates**: Allows changes through GitHub UI without Safe Settings reverting them
+4. **Other settings**: Continues to enforce all non-status-check settings
+
+## Branch Protection Rules
+
+Use `{{EXTERNALLY_DEFINED}}` in the `contexts` array under `required_status_checks`.
+
+### Basic Configuration
+
+<CodeGroup>
+```yaml .github/settings.yml
+branches:
+  - name: main
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 2
+        dismiss_stale_reviews: true
+        require_code_owner_reviews: true
+      required_status_checks:
+        strict: true
+        contexts:
+          - "{{EXTERNALLY_DEFINED}}"
+      enforce_admins: true
+      required_linear_history: true
+      allow_force_pushes: false
+```
+
+```yaml Alternative: Mixed Checks
+branches:
+  - name: main
+    protection:
+      required_status_checks:
+        strict: true
+        contexts:
+          - "security-scan"  # Managed by Safe Settings
+          - "{{EXTERNALLY_DEFINED}}"  # Managed externally
+```
+</CodeGroup>
+
+### Behavior Examples
+
+#### New Branch Protection
+
+```yaml
+branches:
+  - name: develop
+    protection:
+      required_status_checks:
+        strict: true
+        contexts:
+          - "{{EXTERNALLY_DEFINED}}"
+```
+
+**Result**: Branch protection is created with `strict: true` but no required status checks. You can then add checks through the GitHub UI.
+
+#### Existing Branch Protection
+
+**Before Safe Settings** (GitHub has):
+```
+Status checks:
+  ✓ ci-build
+  ✓ unit-tests
+  ✓ integration-tests
+```
+
+**Safe Settings config**:
+```yaml
+branches:
+  - name: main
+    protection:
+      required_status_checks:
+        contexts:
+          - "{{EXTERNALLY_DEFINED}}"
+```
+
+**After Safe Settings sync**:
+```
+Status checks (preserved):
+  ✓ ci-build
+  ✓ unit-tests
+  ✓ integration-tests
+```
+
+### Status Check Inheritance
+
+Status checks merge across configuration levels when the same branch is protected at multiple levels.
+
+<CodeGroup>
+```yaml .github/settings.yml (Org level)
+branches:
+  - name: main
+    protection:
+      required_status_checks:
+        strict: true
+        contexts:
+          - "security-scan"
+```
+
+```yaml .github/suborgs/frontend.yml (Suborg level)
+branches:
+  - name: main
+    protection:
+      required_status_checks:
+        contexts:
+          - "lint"
+          - "{{EXTERNALLY_DEFINED}}"
+```
+
+```yaml .github/repos/web-app.yml (Repo level)
+branches:
+  - name: main
+    protection:
+      required_status_checks:
+        contexts:
+          - "build"
+```
+</CodeGroup>
+
+**Result for web-app repository**:
+```
+Required status checks:
+  ✓ security-scan   (from org)
+  ✓ lint            (from suborg)
+  ✓ build           (from repo)
+  ✓ (any checks added via UI are preserved)
+```
+
+### Removing External Definition
+
+<Warning>
+When you remove `{{EXTERNALLY_DEFINED}}` from configuration, Safe Settings will revert status checks to only those explicitly listed in the configuration.
+</Warning>
+
+**Before** (GitHub has):
+```
+Required checks:
+  ✓ ci-build (managed externally)
+  ✓ unit-tests (managed externally)
+  ✓ e2e-tests (managed externally)
+```
+
+**Configuration change**:
+```yaml
+# Old config
+contexts:
+  - "{{EXTERNALLY_DEFINED}}"
+
+# New config
+contexts:
+  - "ci-build"
+  - "unit-tests"
+```
+
+**After sync**:
+```
+Required checks:
+  ✓ ci-build
+  ✓ unit-tests
+  ✗ e2e-tests (removed)
+```
+
+From this point forward, any checks added through the GitHub UI will be reverted by Safe Settings.
+
+## Repository Rulesets
+
+Use `{{EXTERNALLY_DEFINED}}` as a context value in `required_status_checks` parameters.
+
+### Basic Configuration
+
+<CodeGroup>
+```yaml .github/settings.yml (Org-level ruleset)
+rulesets:
+  - name: Main Branch Protection
+    target: branch
+    enforcement: active
+    conditions:
+      ref_name:
+        include:
+          - "refs/heads/main"
+        exclude: []
+    rules:
+      - type: pull_request
+        parameters:
+          required_approving_review_count: 2
+          require_code_owner_review: true
+      - type: required_status_checks
+        parameters:
+          strict_required_status_checks_policy: true
+          required_status_checks:
+            - context: "{{EXTERNALLY_DEFINED}}"
+```
+
+```yaml .github/repos/api-service.yml (Repo-level ruleset)
+rulesets:
+  - name: API Protection
+    target: branch
+    enforcement: active
+    conditions:
+      ref_name:
+        include:
+          - "refs/heads/main"
+          - "refs/heads/release/*"
+        exclude: []
+    rules:
+      - type: required_status_checks
+        parameters:
+          required_status_checks:
+            - context: "{{EXTERNALLY_DEFINED}}"
+```
+</CodeGroup>
+
+### Ruleset Inheritance Behavior
+
+<Note>
+Unlike branch protection rules, org-level and repo-level rulesets are independent. Status checks are NOT merged between levels.
+</Note>
+
+#### Example: Independent Rulesets
+
+<CodeGroup>
+```yaml .github/settings.yml (Org)
+rulesets:
+  - name: Security Standards
+    target: branch
+    enforcement: active
+    conditions:
+      ref_name:
+        include:
+          - "refs/heads/main"
+    rules:
+      - type: required_status_checks
+        parameters:
+          required_status_checks:
+            - context: "security-scan"
+            - context: "{{EXTERNALLY_DEFINED}}"
+```
+
+```yaml .github/repos/web-app.yml (Repo)
+rulesets:
+  - name: Security Standards
+    target: branch
+    enforcement: active
+    conditions:
+      ref_name:
+        include:
+          - "refs/heads/main"
+    rules:
+      - type: required_status_checks
+        parameters:
+          required_status_checks:
+            - context: "build"
+```
+</CodeGroup>
+
+**Result**: The org-level and repo-level rulesets are separate. The repository will have BOTH rulesets applied, but they don't merge:
+
+```
+Org ruleset "Security Standards":
+  ✓ security-scan
+  ✓ (externally defined checks)
+
+Repo ruleset "Security Standards":
+  ✓ build
+```
+
+### Merging Suborg and Repo Rulesets
+
+<Warning>
+When rulesets share the same name at suborg and repo level, their rules merge. Do not define the same rule type at both levels - GitHub will reject the configuration.
+</Warning>
+
+<CodeGroup>
+```yaml .github/suborgs/backend.yml
+rulesets:
+  - name: Branch Protection
+    rules:
+      - type: required_status_checks
+        parameters:
+          required_status_checks:
+            - context: "{{EXTERNALLY_DEFINED}}"
+```
+
+```yaml .github/repos/api-service.yml (Invalid)
+rulesets:
+  - name: Branch Protection
+    rules:
+      - type: required_status_checks  # ERROR: Duplicate rule type
+        parameters:
+          required_status_checks:
+            - context: "integration-tests"
+```
+
+```yaml .github/repos/api-service.yml (Valid)
+rulesets:
+  - name: Branch Protection
+    rules:
+      - type: pull_request  # Different rule type - OK
+        parameters:
+          required_approving_review_count: 2
+```
+</CodeGroup>
+
+### Deployment Scenarios
+
+#### Scenario 1: New Ruleset Deployment
+
+```yaml
+rulesets:
+  - name: CI Requirements
+    target: branch
+    enforcement: active
+    rules:
+      - type: required_status_checks
+        parameters:
+          required_status_checks:
+            - context: "{{EXTERNALLY_DEFINED}}"
+```
+
+**Behavior**: Ruleset is created with no required status checks. Add checks through GitHub UI.
+
+#### Scenario 2: Existing Ruleset Update
+
+**Existing GitHub configuration**:
+```
+Ruleset: CI Requirements
+  Required status checks:
+    ✓ build
+    ✓ test
+    ✓ lint
+```
+
+**Add to Safe Settings**:
+```yaml
+rulesets:
+  - name: CI Requirements
+    target: branch
+    enforcement: active
+    rules:
+      - type: required_status_checks
+        parameters:
+          required_status_checks:
+            - context: "{{EXTERNALLY_DEFINED}}"
+```
+
+**Result**: Existing checks (build, test, lint) are preserved. Safe Settings won't modify them.
+
+## Inheritance Across Scopes
+
+### Branch Protection Rules: Detailed Examples
+
+#### No Custom Checks
+
+<CodeGroup>
+```yaml Org Level
+branches:
+  - name: main
+    protection:
+      required_status_checks:
+        contexts:
+          - "security-scan"
+```
+
+```yaml Suborg Level
+branches:
+  - name: main
+    protection:
+      required_status_checks:
+        contexts:
+          - "lint"
+```
+
+```yaml Repo Level (Repo2)
+branches:
+  - name: main
+    protection:
+      required_status_checks:
+        contexts:
+          - "build"
+```
+</CodeGroup>
+
+**Status checks deployed**:
+- Repo1 (suborg repo): `security-scan`, `lint`
+- Repo2 (suborg repo): `security-scan`, `lint`, `build`
+
+**UI behavior**: Any checks added through GitHub UI are reverted by Safe Settings.
+
+#### Custom Checks at Org Level
+
+<CodeGroup>
+```yaml Org Level
+branches:
+  - name: main
+    protection:
+      required_status_checks:
+        contexts:
+          - "security-scan"
+          - "{{EXTERNALLY_DEFINED}}"
+```
+
+```yaml Suborg Level
+branches:
+  - name: main
+    protection:
+      required_status_checks:
+        contexts:
+          - "lint"
+```
+
+```yaml Repo Level (Repo2)
+branches:
+  - name: main
+    protection:
+      required_status_checks:
+        contexts:
+          - "build"
+```
+</CodeGroup>
+
+**Status checks deployed**:
+- Repo1: No checks initially (externally defined at org level)
+- Repo2: No checks initially (externally defined at org level)
+
+**UI behavior**: Custom status checks added through UI are retained.
+
+#### Custom Checks at Repo Level
+
+<CodeGroup>
+```yaml Org Level
+branches:
+  - name: main
+    protection:
+      required_status_checks:
+        contexts:
+          - "security-scan"
+```
+
+```yaml Suborg Level
+branches:
+  - name: main
+    protection:
+      required_status_checks:
+        contexts:
+          - "lint"
+```
+
+```yaml Repo Level (Repo2)
+branches:
+  - name: main
+    protection:
+      required_status_checks:
+        contexts:
+          - "{{EXTERNALLY_DEFINED}}"
+```
+</CodeGroup>
+
+**Status checks deployed**:
+- Repo1: `security-scan`, `lint` (UI changes reverted)
+- Repo2: No checks initially (UI changes retained)
+
+### Rulesets: Detailed Examples
+
+#### No Custom Checks
+
+<CodeGroup>
+```yaml Org Level
+rulesets:
+  - name: Standards
+    rules:
+      - type: required_status_checks
+        parameters:
+          required_status_checks:
+            - context: "security-scan"
+```
+
+```yaml Suborg Level
+rulesets:
+  - name: Standards
+    rules:
+      - type: required_status_checks
+        parameters:
+          required_status_checks:
+            - context: "lint"
+```
+
+```yaml Repo Level (Repo2)
+rulesets:
+  - name: Standards
+    rules:
+      - type: required_status_checks
+        parameters:
+          required_status_checks:
+            - context: "build"
+```
+</CodeGroup>
+
+**Result**:
+- Org ruleset deployed: `security-scan`
+- Repo1: Suborg and Repo rulesets merge (**FAILS** - duplicate rule type)
+- Repo2: Suborg and Repo rulesets merge (**FAILS** - duplicate rule type)
+
+**Fix**: Don't define the same rule type at suborg and repo level.
+
+#### Custom Checks at Org and Suborg Level
+
+<CodeGroup>
+```yaml Org Level
+rulesets:
+  - name: Standards
+    rules:
+      - type: required_status_checks
+        parameters:
+          required_status_checks:
+            - context: "security-scan"
+            - context: "{{EXTERNALLY_DEFINED}}"
+```
+
+```yaml Suborg Level
+rulesets:
+  - name: Standards
+    rules:
+      - type: required_status_checks
+        parameters:
+          required_status_checks:
+            - context: "lint"
+            - context: "{{EXTERNALLY_DEFINED}}"
+```
+
+```yaml Repo Level (Repo2)
+rulesets:
+  - name: Standards
+    rules:
+      - type: pull_request
+        parameters:
+          required_approving_review_count: 2
+```
+</CodeGroup>
+
+**Result**:
+- Org ruleset: No checks initially, UI changes retained
+- Repo1: No checks initially, UI changes retained
+- Repo2: Suborg rules merged with repo rules (different types - valid)
+
+## Best Practices
+
+### When to Use External Checks
+
+**Good use cases**:
+- CI/CD workflows that change frequently
+- Checks managed by different teams
+- Environment-specific checks (staging vs production)
+- Third-party integration checks
+- Checks that vary by project phase
+
+**Keep in Safe Settings**:
+- Critical security checks required org-wide
+- Compliance-related checks
+- Checks that should never be removed
+
+### Hybrid Approach
+
+<CodeGroup>
+```yaml Recommended Pattern
+branches:
+  - name: main
+    protection:
+      required_status_checks:
+        strict: true
+        contexts:
+          - "security-scan"      # Critical - never remove
+          - "license-check"      # Compliance - required
+          - "{{EXTERNALLY_DEFINED}}"  # CI/CD - team managed
+```
+
+```yaml By Environment
+branches:
+  - name: main
+    protection:
+      required_status_checks:
+        contexts:
+          - "{{EXTERNALLY_DEFINED}}"  # Production checks via UI
+  
+  - name: develop
+    protection:
+      required_status_checks:
+        contexts:
+          - "build"
+          - "test"  # Stable dev checks in config
+```
+</CodeGroup>
+
+### Documentation
+
+When using `{{EXTERNALLY_DEFINED}}`, document:
+
+- Where external checks are configured
+- Who has permission to modify them
+- What the current checks are (snapshot in docs)
+- How to add/remove checks
+
+```yaml
+# .github/settings.yml
+branches:
+  - name: main
+    protection:
+      # Status checks managed via GitHub UI by DevOps team
+      # Current checks (as of 2024-03-01):
+      #   - ci-build
+      #   - unit-tests
+      #   - integration-tests
+      # Contact: #devops-team
+      required_status_checks:
+        strict: true
+        contexts:
+          - "{{EXTERNALLY_DEFINED}}"
+```
+
+### Monitoring
+
+Regularly review externally defined checks:
+
+```bash
+# List branch protection checks
+gh api repos/:owner/:repo/branches/main/protection/required_status_checks
+
+# List ruleset status checks
+gh api repos/:owner/:repo/rulesets
+```
+
+### Migration Strategy
+
+Transitioning to external management:
+
+1. **Document current state**
+   ```yaml
+   contexts:
+     - "build"
+     - "test"
+     - "lint"
+   ```
+
+2. **Add placeholder**
+   ```yaml
+   contexts:
+     - "build"
+     - "test"
+     - "lint"
+     - "{{EXTERNALLY_DEFINED}}"  # Future team-managed checks
+   ```
+
+3. **Verify external checks are added through UI**
+
+4. **Remove hardcoded checks**
+   ```yaml
+   contexts:
+     - "{{EXTERNALLY_DEFINED}}"
+   ```
+
+## Troubleshooting
+
+### Checks Keep Getting Removed
+
+**Problem**: Manually added status checks are removed after Safe Settings sync.
+
+**Cause**: `{{EXTERNALLY_DEFINED}}` is not in the configuration for that branch/ruleset.
+
+**Solution**: Add the placeholder to the appropriate configuration level.
+
+### External Checks Not Preserved
+
+**Problem**: Added checks through UI but Safe Settings removed them.
+
+**Possible causes**:
+1. Configuration updated without `{{EXTERNALLY_DEFINED}}`
+2. Different branch name (check exact name)
+3. Suborg/repo override without the placeholder
+
+**Debug**:
+```bash
+# Check what Safe Settings will apply
+# (create a test PR with the config change)
+```
+
+### Ruleset Merge Errors
+
+**Error**: "required_status_checks can't be defined twice"
+
+**Cause**: Same rule type defined at both suborg and repo level with the same ruleset name.
+
+**Solution**: 
+- Use different ruleset names, OR
+- Define status checks at only one level, OR
+- Use different rule types at different levels
+
+### Changes Not Taking Effect
+
+**Problem**: Added `{{EXTERNALLY_DEFINED}}` but checks are still being reverted.
+
+**Checklist**:
+1. Committed to default branch?
+2. Correct YAML syntax?
+3. Correct indentation?
+4. Configuration applied to the right branch/repo?
+5. Check Safe Settings logs for errors
+
+## Limitations
+
+- Cannot use `{{EXTERNALLY_DEFINED}}` for other settings (only status checks)
+- Org-level rulesets are independent from repo-level (no merge)
+- Cannot partially externalize (either all contexts or none at that level)
+- Removing the placeholder reverts to configuration-defined checks immediately
+
+## Related Documentation
+
+- [Branch Protection Configuration](/settings/branches)
+- [Rulesets Configuration](/settings/rulesets)
+- [Drift Prevention](/advanced/drift-prevention)
+- [Custom Validators](/advanced/custom-validators)

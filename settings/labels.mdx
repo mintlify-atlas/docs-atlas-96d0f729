@@ -1,0 +1,295 @@
+---
+title: Labels
+description: Configure issue and pull request labels with colors and descriptions
+---
+
+The `labels` section configures labels for issues and pull requests. Labels help categorize and organize work in repositories.
+
+## Basic Configuration
+
+Labels can be configured in two ways:
+
+### Array Format
+
+```yaml
+labels:
+  - name: bug
+    color: CC0000
+    description: An issue with the system
+  
+  - name: feature
+    color: "#336699"
+    description: New functionality
+```
+
+### Object Format with Include/Exclude
+
+```yaml
+labels:
+  include:
+    - name: bug
+      color: CC0000
+      description: An issue with the system
+  
+  exclude:
+    - name: ^release  # Don't delete labels starting with "release"
+```
+
+## Label Properties
+
+<ParamField path="name" type="string" required>
+  The name of the label.
+  
+  ```yaml
+  labels:
+    - name: priority-high
+      color: FF0000
+  ```
+</ParamField>
+
+<ParamField path="color" type="string" required>
+  The color of the label in hexadecimal format. The `#` prefix is optional. Color values can be:
+  - Hexadecimal without `#`: `CC0000`
+  - Hexadecimal with `#` (must be quoted): `"#336699"`
+  
+  Colors are automatically padded to 6 characters if shorter.
+  
+  ```yaml
+  labels:
+    - name: bug
+      color: CC0000
+    
+    - name: feature
+      color: "#336699"
+  ```
+</ParamField>
+
+<ParamField path="description" type="string">
+  A short description of the label.
+  
+  ```yaml
+  labels:
+    - name: documentation
+      color: 0075ca
+      description: Improvements or additions to documentation
+  ```
+</ParamField>
+
+## Renaming Labels
+
+<ParamField path="oldname" type="string">
+  Include the old name to rename an existing label. This preserves the label's history and associations with issues and pull requests.
+  
+  ```yaml
+  labels:
+    - name: good-first-issue
+      oldname: Help Wanted
+      color: "#326699"
+      description: Good for newcomers
+  ```
+</ParamField>
+
+## Include/Exclude Patterns
+
+### Include
+
+<ParamField path="include" type="array">
+  When using the object format, specify labels to be managed by Safe Settings.
+  
+  ```yaml
+  labels:
+    include:
+      - name: bug
+        color: CC0000
+      - name: feature
+        color: "#336699"
+  ```
+</ParamField>
+
+### Exclude
+
+<ParamField path="exclude" type="array">
+  Regular expression patterns for labels that should not be deleted when not in the configuration. This allows manual label creation in GitHub while still managing a core set of labels.
+  
+  <ParamField path="name" type="string" required>
+    Regular expression pattern to match label names.
+  </ParamField>
+  
+  ```yaml
+  labels:
+    include:
+      - name: bug
+        color: CC0000
+    exclude:
+      # Don't delete labels starting with "release"
+      - name: ^release
+      # Don't delete labels starting with "team-"
+      - name: ^team-
+  ```
+</ParamField>
+
+## Complete Examples
+
+### Basic Labels (Array Format)
+
+```yaml
+labels:
+  - name: bug
+    color: CC0000
+    description: An issue with the system
+  
+  - name: feature
+    color: "#336699"
+    description: New functionality
+  
+  - name: documentation
+    color: 0075ca
+    description: Improvements to documentation
+  
+  - name: enhancement
+    color: 84b6eb
+    description: Improvement to existing functionality
+```
+
+### Labels with Renaming
+
+```yaml
+labels:
+  - name: good-first-issue
+    oldname: Help Wanted
+    color: "#326699"
+    description: Good for newcomers
+  
+  - name: priority-high
+    oldname: urgent
+    color: FF0000
+    description: High priority issue
+```
+
+### Labels with Include/Exclude
+
+```yaml
+labels:
+  include:
+    - name: bug
+      color: CC0000
+      description: An issue with the system
+    
+    - name: feature
+      color: "#336699"
+      description: New functionality
+    
+    - name: documentation
+      color: 0075ca
+      description: Improvements to documentation
+  
+  exclude:
+    # Don't delete labels created by release automation
+    - name: ^release
+    # Don't delete team-specific labels
+    - name: ^team-
+    # Don't delete priority labels
+    - name: ^priority-
+```
+
+## How Exclude Patterns Work
+
+Exclude patterns use regular expressions to match label names. When Safe Settings syncs labels:
+
+1. It creates or updates labels defined in `include` (or the array)
+2. It identifies labels that exist in GitHub but aren't in the configuration
+3. It checks if any excluded pattern matches those labels
+4. Labels matching exclude patterns are **not deleted**
+5. Labels not matching any exclude pattern are **deleted**
+
+### Exclude Pattern Examples
+
+```yaml
+exclude:
+  # Exact match
+  - name: ^wontfix$
+  
+  # Starts with
+  - name: ^release
+  
+  # Contains
+  - name: temp
+  
+  # Multiple patterns with OR
+  - name: ^(release|hotfix|patch)
+  
+  # Ends with
+  - name: -draft$
+```
+
+## Common Label Sets
+
+### Issue Types
+
+```yaml
+labels:
+  - name: bug
+    color: CC0000
+    description: Something isn't working
+  
+  - name: feature
+    color: "#336699"
+    description: New feature request
+  
+  - name: enhancement
+    color: 84b6eb
+    description: Improvement to existing feature
+  
+  - name: documentation
+    color: 0075ca
+    description: Documentation changes
+```
+
+### Priority Labels
+
+```yaml
+labels:
+  - name: priority-critical
+    color: FF0000
+    description: Critical priority
+  
+  - name: priority-high
+    color: FF6600
+    description: High priority
+  
+  - name: priority-medium
+    color: FFCC00
+    description: Medium priority
+  
+  - name: priority-low
+    color: 0E8A16
+    description: Low priority
+```
+
+### Status Labels
+
+```yaml
+labels:
+  - name: in-progress
+    color: FFA500
+    description: Work in progress
+  
+  - name: blocked
+    color: FF0000
+    description: Blocked by dependency
+  
+  - name: needs-review
+    color: FFFF00
+    description: Needs code review
+  
+  - name: ready-to-merge
+    color: 00FF00
+    description: Ready to be merged
+```
+
+## API Reference
+
+For more details, see GitHub's REST API documentation:
+- [Create a label](https://docs.github.com/en/rest/issues/labels#create-a-label)
+- [Update a label](https://docs.github.com/en/rest/issues/labels#update-a-label)
+- [Delete a label](https://docs.github.com/en/rest/issues/labels#delete-a-label)

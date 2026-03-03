@@ -1,0 +1,586 @@
+---
+title: Repository Settings
+description: Configure repository-specific settings that override organization and sub-organization defaults
+---
+
+Repository-level settings provide the highest precedence in Safe Settings' configuration hierarchy. These settings override both org-level and suborg-level configurations for specific repositories.
+
+## File Location
+
+Repository settings are stored in the `.github/repos/` folder of your admin repository, with one YAML file per repository:
+
+```
+admin/
+└── .github/
+    └── repos/
+        ├── api-gateway.yml
+        ├── web-app.yml
+        ├── mobile-app.yml
+        └── core-service.yml
+```
+
+<Note>
+The filename must match the repository name exactly: `<repo-name>.yml` or `<repo-name>.yaml`
+</Note>
+
+<Warning>
+The repo directory structure (`.github/repos/`) cannot be customized.
+</Warning>
+
+## When to Use Repo Settings
+
+Use repository-specific settings when:
+
+- A repository has unique requirements that differ from team defaults
+- You need to exempt a critical repository from standard policies
+- You want to enforce stricter controls on high-value repositories
+- A repository requires special branch protection, teams, or features
+
+<Info>
+Repo settings have the highest precedence and will override any org-level or suborg-level configuration.
+</Info>
+
+## Basic Structure
+
+Repo configuration files follow the same structure as org and suborg settings:
+
+```yaml .github/repos/api-gateway.yml
+# All settings from org and suborg levels can be overridden here
+
+repository:
+  description: "Production API Gateway - Critical Service"
+  has_wiki: false
+  has_projects: false
+
+branches:
+  - name: default
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 3  # Override: critical repo needs 3 approvals
+
+teams:
+  - name: api-team
+    permission: admin
+```
+
+## Repository-Specific Features
+
+Repo settings include two special features not available at other levels:
+
+### Force Create
+
+Automatically create the repository if it doesn't exist:
+
+```yaml .github/repos/new-project.yml
+repository:
+  force_create: true
+  private: true
+  description: "New project repository"
+  auto_init: true
+```
+
+<Warning>
+Use `force_create` carefully. Once set to `true`, Safe Settings will create the repository on the next sync.
+</Warning>
+
+### Template Repository
+
+Create repositories from a template:
+
+```yaml .github/repos/new-service.yml
+repository:
+  force_create: true
+  template: template-microservice  # Use this repo as a template
+  private: true
+  description: "New microservice"
+```
+
+<Note>
+The `template` field is used with `force_create` to specify which template repository to use when creating the new repository.
+</Note>
+
+## Complete Examples
+
+<Tabs>
+  <Tab title="Production API">
+    ```yaml .github/repos/api-gateway.yml
+    repository:
+      description: "Production API Gateway - Critical Infrastructure"
+      private: true
+      has_wiki: false
+      has_projects: false
+      topics:
+        - api
+        - gateway
+        - production
+        - critical
+      security:
+        enableVulnerabilityAlerts: true
+        enableAutomatedSecurityFixes: true
+    
+    branches:
+      - name: default
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 3
+            require_code_owner_reviews: true
+            dismiss_stale_reviews: true
+            require_last_push_approval: true
+          required_status_checks:
+            strict: true
+            contexts:
+              - "CI/test"
+              - "CI/integration-test"
+              - "security/sast"
+              - "security/dependency-scan"
+              - "security/secret-scan"
+              - "performance/load-test"
+          enforce_admins: true
+          restrictions:
+            teams:
+              - senior-engineers
+              - sre-team
+      
+      - name: "release/*"
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 2
+          enforce_admins: true
+    
+    teams:
+      - name: api-team
+        permission: admin
+      - name: sre-team
+        permission: push
+      - name: security-team
+        permission: push
+    
+    custom_properties:
+      - name: criticality
+        value: critical
+      - name: on-call-team
+        value: api-team
+      - name: security-tier
+        value: "1"
+    
+    environments:
+      - name: production
+        wait_timer: 30
+        reviewers:
+          - type: Team
+            id: api-team
+          - type: Team
+            id: sre-team
+        deployment_branch_policy:
+          protected_branches: true
+          custom_branch_policies: false
+    ```
+  </Tab>
+  
+  <Tab title="Experimental Project">
+    ```yaml .github/repos/experiment-ai-features.yml
+    repository:
+      description: "Experimental AI features - sandbox project"
+      private: true
+      has_wiki: true
+      has_issues: true
+      has_projects: true
+      topics:
+        - experiment
+        - ai
+        - research
+    
+    # Relaxed branch protection for experimentation
+    branches:
+      - name: default
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 1
+            dismiss_stale_reviews: false
+          required_status_checks:
+            strict: false
+            contexts:
+              - "CI/test"
+          enforce_admins: false
+          restrictions: null
+    
+    teams:
+      - name: ai-research-team
+        permission: admin
+      - name: ml-engineers
+        permission: push
+    
+    labels:
+      include:
+        - name: experiment
+          color: "#FFA500"
+          description: Experimental feature
+        - name: ai-model
+          color: "#9C27B0"
+          description: AI model related
+    ```
+  </Tab>
+  
+  <Tab title="Public Open Source">
+    ```yaml .github/repos/opensource-cli-tool.yml
+    repository:
+      description: "Open source CLI tool for developers"
+      homepage: "https://cli-tool.example.com"
+      private: false
+      has_wiki: true
+      has_issues: true
+      has_projects: true
+      has_discussions: true
+      topics:
+        - cli
+        - developer-tools
+        - open-source
+      license_template: mit
+    
+    branches:
+      - name: default
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 1
+            dismiss_stale_reviews: true
+          required_status_checks:
+            strict: true
+            contexts:
+              - "CI/test"
+              - "CI/lint"
+              - "CI/build"
+          enforce_admins: false
+          restrictions: null
+    
+    teams:
+      - name: maintainers
+        permission: admin
+      - name: contributors
+        permission: push
+    
+    labels:
+      include:
+        - name: good-first-issue
+          color: "#7057ff"
+          description: Good for newcomers
+        - name: help-wanted
+          color: "#008672"
+          description: Extra attention is needed
+        - name: documentation
+          color: "#0075ca"
+          description: Improvements or additions to documentation
+    
+    autolinks:
+      - key_prefix: "ISSUE-"
+        url_template: "https://github.com/org/opensource-cli-tool/issues/<num>"
+    ```
+  </Tab>
+  
+  <Tab title="New from Template">
+    ```yaml .github/repos/new-microservice.yml
+    repository:
+      # Create this repo from a template
+      force_create: true
+      template: template-nodejs-microservice
+      
+      description: "New microservice for payment processing"
+      private: true
+      has_wiki: false
+      has_issues: true
+      has_projects: true
+      auto_init: true
+      topics:
+        - microservice
+        - payment
+        - nodejs
+    
+    branches:
+      - name: default
+        protection:
+          required_pull_request_reviews:
+            required_approving_review_count: 2
+            require_code_owner_reviews: true
+          required_status_checks:
+            strict: true
+            contexts:
+              - "CI/test"
+              - "CI/security-scan"
+          enforce_admins: true
+          restrictions: null
+    
+    teams:
+      - name: payment-team
+        permission: admin
+      - name: backend-team
+        permission: push
+    
+    custom_properties:
+      - name: team
+        value: payment
+      - name: service-type
+        value: microservice
+    ```
+  </Tab>
+</Tabs>
+
+## Overriding Patterns
+
+### Override Specific Settings
+
+You only need to specify the settings you want to override:
+
+<CodeGroup>
+```yaml Org Level (.github/settings.yml)
+repository:
+  private: true
+  has_issues: true
+  has_wiki: true
+  has_projects: true
+
+branches:
+  - name: default
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 1
+```
+
+```yaml Repo Level (.github/repos/special-project.yml)
+# Only override what's different
+repository:
+  has_wiki: false  # Override this one setting
+
+branches:
+  - name: default
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 3  # Override this value
+
+# All other org-level settings are inherited
+```
+</CodeGroup>
+
+### Disable Settings with Null
+
+Set settings to `null` to explicitly disable them:
+
+```yaml .github/repos/legacy-project.yml
+repository:
+  has_wiki: false
+  has_projects: false
+
+branches:
+  - name: default
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 1
+      required_status_checks: null  # Explicitly disable status checks
+      enforce_admins: false
+      restrictions: null            # Explicitly disable restrictions
+```
+
+### Add Additional Teams
+
+Teams are merged, not replaced:
+
+```yaml .github/repos/cross-team-project.yml
+# Teams from org and suborg levels are preserved
+# These teams are added to the existing teams
+teams:
+  - name: special-project-team
+    permission: admin
+  - name: external-consultants
+    permission: pull
+```
+
+## Renaming Repositories
+
+<Warning>
+Repo renaming requires special attention in Safe Settings.
+</Warning>
+
+### Using Safe Settings to Rename
+
+To rename a repository using Safe Settings, rename the repo config file:
+
+```bash
+# In your admin repo
+mv .github/repos/old-name.yml .github/repos/new-name.yml
+```
+
+Safe Settings will:
+1. Detect the file rename
+2. Rename the repository in GitHub
+3. Use the new name going forward
+
+### Manual Renames
+
+By default, Safe Settings ignores manual renames (for backward compatibility). To prevent manual renames:
+
+```bash
+# Set environment variable
+BLOCK_REPO_RENAME_BY_HUMAN=true
+```
+
+With this setting:
+- Manual renames are reverted automatically
+- Bot-initiated renames are allowed
+- Safe Settings copies `old-repo.yml` to `new-repo.yml` (if new file doesn't exist)
+
+## Working with Status Checks
+
+You can allow status checks to be defined outside of Safe Settings:
+
+```yaml .github/repos/dynamic-checks.yml
+branches:
+  - name: default
+    protection:
+      required_pull_request_reviews:
+        required_approving_review_count: 2
+      required_status_checks:
+        strict: true
+        contexts:
+          - "{{EXTERNALLY_DEFINED}}"  # Allow external status checks
+```
+
+For rulesets:
+
+```yaml .github/repos/dynamic-checks.yml
+rulesets:
+  - name: Status Checks
+    target: branch
+    enforcement: active
+    rules:
+      - type: required_status_checks
+        parameters:
+          required_status_checks:
+            - context: "{{EXTERNALLY_DEFINED}}"
+```
+
+<Accordion title="How externally defined status checks work">
+- For new branch protection/rulesets: Deployed with no status checks initially
+- For existing configurations: Existing status checks remain unchanged
+- Status checks can be added/modified via GitHub UI
+- If you remove `{{EXTERNALLY_DEFINED}}`, checks revert to Safe Settings configuration
+</Accordion>
+
+## Configuration Tips
+
+<CardGroup cols={2}>
+  <Card title="Start Minimal" icon="seedling">
+    Only define settings that need to differ from org/suborg defaults. This keeps configs maintainable.
+  </Card>
+  
+  <Card title="Use Comments" icon="comment">
+    Document why specific overrides exist:
+    ```yaml
+    # Requires 3 reviewers due to PCI compliance
+    required_approving_review_count: 3
+    ```
+  </Card>
+  
+  <Card title="Group Related Settings" icon="layer-group">
+    Keep related settings together for readability. Add blank lines between major sections.
+  </Card>
+  
+  <Card title="Test in PR" icon="flask">
+    Always test repo config changes in a PR. Safe Settings will run in dry-run mode and show you what will change.
+  </Card>
+</CardGroup>
+
+## Validation
+
+Repo-level settings are subject to validation rules defined in your deployment settings:
+
+```yaml deployment-settings.yml
+overridevalidators:
+  - plugin: branches
+    error: |
+      Branch protection required_approving_review_count cannot be overridden to a lower value
+    script: |
+      if (baseconfig.protection.required_pull_request_reviews.required_approving_review_count && 
+          overrideconfig.protection.required_pull_request_reviews.required_approving_review_count) {
+        return overrideconfig.protection.required_pull_request_reviews.required_approving_review_count >= 
+               baseconfig.protection.required_pull_request_reviews.required_approving_review_count
+      }
+      return true
+```
+
+This prevents repos from weakening security policies set at the org or suborg level.
+
+<Accordion title="What happens if validation fails?">
+If a repo config fails validation:
+1. The PR check will fail with an error message
+2. The settings will not be applied
+3. The error will be shown in the check run and PR comment
+4. You must fix the invalid configuration before merging
+</Accordion>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="My repo settings aren't being applied">
+    Check:
+    1. Is the filename exactly `<repo-name>.yml` or `<repo-name>.yaml`?
+    2. Is the YAML valid? Use a YAML validator.
+    3. Check the Safe Settings check run in the admin repo for errors.
+    4. Is the repository in the restricted repos list?
+  </Accordion>
+  
+  <Accordion title="Getting validation errors">
+    Your repo config may be violating an override validator. Check your `deployment-settings.yml` for validators that prevent certain overrides. The error message will indicate which validator failed.
+  </Accordion>
+  
+  <Accordion title="Settings from suborg are missing">
+    Repo settings are merged with suborg and org settings. If you explicitly set a value to `null` or override it, the suborg value will not be used. Review your merge hierarchy.
+  </Accordion>
+  
+  <Accordion title="Repository not being created with force_create">
+    Ensure:
+    1. `force_create: true` is set
+    2. You've pushed to the default branch (not a PR)
+    3. Safe Settings has permissions to create repositories
+    4. Check Safe Settings logs for errors
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+1. **Use Sparingly** - Only create repo configs when truly needed. Most repos should use org/suborg defaults.
+
+2. **Document Exceptions** - Add comments explaining why a repo needs special treatment:
+   ```yaml
+   # This repo handles PII and requires extra security controls
+   branches:
+     - name: default
+       protection:
+         required_approving_review_count: 3
+   ```
+
+3. **Leverage CODEOWNERS** - Ensure the right team approves changes:
+   ```
+   .github/repos/critical-api.yml @org/api-team @org/security-team
+   ```
+
+4. **Regular Reviews** - Periodically review repo configs to see if they can be consolidated into suborg configs.
+
+5. **Test First** - Always create a PR to test changes before applying them.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration Hierarchy" icon="sitemap" href="/configuration/hierarchy">
+    Understand how repo settings merge with org and suborg settings
+  </Card>
+  
+  <Card title="Deployment Settings" icon="gear" href="/configuration/deployment-settings">
+    Configure validators and restrictions
+  </Card>
+  
+  <Card title="Sample Repo Config" icon="file" href="https://github.com/github/safe-settings/blob/main/docs/sample-settings/repo.yml">
+    View sample repository configuration
+  </Card>
+  
+  <Card title="Status Checks" icon="check" href="/advanced/status-checks">
+    Learn about status check inheritance
+  </Card>
+</CardGroup>

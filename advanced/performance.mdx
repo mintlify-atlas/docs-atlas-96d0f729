@@ -1,0 +1,801 @@
+---
+title: Performance Optimization
+description: Understand how Safe Settings efficiently manages thousands of repositories through selective loading, intelligent comparison, and optimized API usage
+---
+
+Safe Settings is designed to manage organizations with thousands of repositories efficiently. This page explains the performance optimizations that allow Safe Settings to scale.
+
+## Performance Challenges
+
+When managing large organizations, Safe Settings faces several constraints:
+
+### GitHub App Token Lifetime
+
+- GitHub App tokens expire after **1 hour**
+- All synchronization work must complete within this window
+- Token renewal isn't always possible during long-running operations
+
+### API Rate Limits
+
+- GitHub enforces rate limits on API calls
+- Standard rate limit: 5,000 requests per hour per installation
+- Making unnecessary API calls consumes quota quickly
+
+### Configuration Loading
+
+- Loading thousands of repo configuration files is expensive
+- Parsing and merging configurations takes time
+- Network latency adds up across many files
+
+### Change Detection
+
+- Comparing configurations with actual GitHub state for every repo
+- Deep object comparison is computationally expensive
+- Generating detailed diff reports requires processing
+
+## Optimization Strategies
+
+Safe Settings uses multiple strategies to address these challenges:
+
+## 1. Selective Configuration Loading
+
+Instead of loading all configuration files for every event, Safe Settings intelligently determines which files are needed.
+
+### How It Works
+
+<CodeGroup>
+```yaml Scenario 1: Global Settings Change
+# Change in .github/settings.yml
+# (affects all repositories)
+
+Action: Load ALL configuration files
+  - .github/settings.yml
+  - .github/suborgs/*.yml (all suborg files)
+  - .github/repos/*.yml (all repo files)
+
+Reason: Global change affects every repository
+```
+
+```yaml Scenario 2: Suborg Settings Change
+# Change in .github/suborgs/frontend.yml
+# (affects only frontend suborg repos)
+
+Action: Load SELECTIVE configuration files
+  - .github/settings.yml (org level)
+  - .github/suborgs/frontend.yml (changed suborg)
+  - .github/repos/*.yml (only for frontend repos)
+
+Optimization: Skip other suborg files and unrelated repo files
+```
+
+```yaml Scenario 3: Specific Repo Settings Change
+# Change in .github/repos/api-service.yml
+# (affects only api-service repo)
+
+Action: Load MINIMAL configuration files
+  - .github/settings.yml (org level)
+  - .github/suborgs/*.yml (if api-service belongs to a suborg)
+  - .github/repos/api-service.yml (only changed repo)
+
+Optimization: Skip all other repo files
+```
+
+```yaml Scenario 4: Single Repo Event
+# Event: repository.created (new-repo)
+# (affects only the new repository)
+
+Action: Load TARGETED configuration files
+  - .github/settings.yml (org level)
+  - .github/suborgs/*.yml (check if new-repo belongs to suborg)
+  - .github/repos/new-repo.yml (if it exists)
+
+Optimization: Don't load any other repo files
+```
+</CodeGroup>
+
+### Implementation
+
+The `loadConfigs` and `getRepoConfigs` functions implement selective loading:
+
+```javascript
+// From lib/settings.js
+
+async loadConfigs(repo) {
+  this.subOrgConfigs = await this.getSubOrgConfigs()
+  this.repoConfigs = await this.getRepoConfigs(repo)  // repo parameter controls scope
+}
+
+async getRepoConfigs(repo) {
+  const overridePaths = await this.getRepoConfigMap()
+  const repoConfigs = {}
+  
+  for (const override of overridePaths) {
+    // Skip if already loaded
+    if (repoConfigs[override.name]) continue
+    
+    // If repo is specified, only load that repo's config
+    if (repo) {
+      if (override.name === `${repo.repo}.yml` || override.name === `${repo.repo}.yaml`) {
+        const data = await this.loadYaml(override.path)
+        repoConfigs[override.name] = data
+      }
+    } else {
+      // Load all repo configs for global sync
+      const data = await this.loadYaml(override.path)
+      repoConfigs[override.name] = data
+    }
+  }
+  
+  return repoConfigs
+}
+```
+
+### Performance Impact
+
+<CodeGroup>
+```yaml Without Selective Loading (1000 repos)
+Global change:
+  - Load 1 org file
+  - Load 10 suborg files
+  - Load 1000 repo files
+  - Total: 1011 files
+
+Repo change:
+  - Load 1 org file
+  - Load 10 suborg files
+  - Load 1000 repo files
+  - Total: 1011 files (same!)
+
+Result: Every change loads all files
+```
+
+```yaml With Selective Loading (1000 repos)
+Global change:
+  - Load 1 org file
+  - Load 10 suborg files
+  - Load 1000 repo files
+  - Total: 1011 files
+
+Repo change:
+  - Load 1 org file
+  - Load 1 suborg file (if applicable)
+  - Load 1 repo file
+  - Total: 2-3 files
+
+Result: 99.7% reduction for repo-specific changes
+```
+</CodeGroup>
+
+## 2. Intelligent Change Detection
+
+Safe Settings only makes API calls when there are actual differences between configuration and GitHub state.
+
+### The compareDeep Function
+
+The `compareDeep` function generates detailed differences between expected and actual configurations:
+
+```javascript
+// From lib/mergeDeep.js
+
+compareDeep(target, source, additions, modifications, deletions) {
+  // Returns:
+  // {
+  //   additions: {},      // New settings to add
+  //   modifications: {},  // Settings to update
+  //   deletions: {},      // Settings to remove
+  //   hasChanges: true    // Boolean flag
+  // }
+}
+```
+
+### hasChanges Flag
+
+The critical optimization is the `hasChanges` boolean:
+
+```javascript
+return ({
+  additions,
+  modifications,
+  deletions,
+  hasChanges: !this.isEmpty(additions) || 
+              !this.isEmpty(modifications) || 
+              !this.isEmpty(deletions)
+})
+```
+
+### Conditional API Calls
+
+Plugins only make API calls when changes are detected:
+
+<CodeGroup>
+```javascript Branch Protection Example
+// From lib/plugins/branches.js
+
+const changes = this.comparator.compareDeep(
+  existingBranchProtection,
+  desiredBranchProtection
+)
+
+if (!changes.hasChanges) {
+  // No API call needed - skip
+  return
+}
+
+// Only reaches here if there are real changes
+await this.github.repos.updateBranchProtection({
+  owner: this.repo.owner,
+  repo: this.repo.repo,
+  branch: branch.name,
+  ...desiredBranchProtection
+})
+```
+
+```javascript Repository Settings Example
+// From lib/plugins/repository.js
+
+const changes = this.comparator.compareDeep(
+  currentRepoSettings,
+  desiredRepoSettings
+)
+
+if (changes.hasChanges) {
+  // Only update if there are differences
+  await this.github.repos.update({
+    owner: this.repo.owner,
+    repo: this.repo.repo,
+    ...changes.modifications
+  })
+}
+```
+
+```javascript Ruleset Example
+// From lib/plugins/rulesets.js
+
+const merged = this.comparator.compareDeep(existing, desired)
+
+return merged.hasChanges
+  ? this.updateRuleset(merged.modifications)
+  : this.skipUpdate()
+```
+</CodeGroup>
+
+### What Gets Compared
+
+The comparison logic handles complex nested structures:
+
+<CodeGroup>
+```json Simple Property
+Expected: { "name": "main" }
+Actual:   { "name": "main" }
+Result:   hasChanges = false (identical)
+```
+
+```json Nested Object
+Expected: {
+  "protection": {
+    "required_pull_request_reviews": {
+      "required_approving_review_count": 2
+    }
+  }
+}
+
+Actual: {
+  "protection": {
+    "required_pull_request_reviews": {
+      "required_approving_review_count": 2
+    }
+  }
+}
+
+Result: hasChanges = false (deep equality)
+```
+
+```json Actual Difference
+Expected: {
+  "protection": {
+    "required_pull_request_reviews": {
+      "required_approving_review_count": 2
+    }
+  }
+}
+
+Actual: {
+  "protection": {
+    "required_pull_request_reviews": {
+      "required_approving_review_count": 1
+    }
+  }
+}
+
+Result: hasChanges = true (difference detected)
+```
+</CodeGroup>
+
+### Ignored Fields
+
+The comparison intelligently ignores irrelevant fields:
+
+```javascript
+// From lib/mergeDeep.js
+
+for (const key in source) {
+  // Skip URLs and other metadata
+  if (key.indexOf('url') >= 0 || this.ignorableFields.indexOf(key) >= 0) {
+    continue
+  }
+  // ... comparison logic
+}
+```
+
+**Ignored fields include**:
+- URL fields (`url`, `users_url`, `teams_url`, etc.)
+- GitHub-generated IDs
+- Timestamps
+- Metadata fields
+
+This prevents false positives that would trigger unnecessary API calls.
+
+## 3. Automatic Rate Limit Handling
+
+Probot (the framework Safe Settings is built on) automatically handles GitHub's rate limits.
+
+### How Probot Handles Rate Limits
+
+```javascript
+// Automatic handling by Probot:
+// 1. Monitors rate limit headers
+// 2. Pauses requests when limit approached
+// 3. Resumes when rate limit resets
+// 4. Queues requests during pause
+```
+
+### Abuse Detection
+
+Probot also handles abuse detection:
+
+```javascript
+// When GitHub returns 403 with abuse detection:
+// 1. Probot detects abuse flag
+// 2. Backs off exponentially
+// 3. Retries after delay
+// 4. Continues processing
+```
+
+No manual rate limit handling required in Safe Settings code.
+
+### Monitoring Rate Limits
+
+```bash
+# Check current rate limit status
+curl -H "Authorization: Bearer $TOKEN" \
+  https://api.github.com/rate_limit
+
+# Response:
+{
+  "resources": {
+    "core": {
+      "limit": 5000,
+      "remaining": 4850,
+      "reset": 1710532800
+    }
+  }
+}
+```
+
+## 4. Optimized Pull Request Checks
+
+Pull request validation runs in dry-run mode with summarized output.
+
+### Summary Instead of Details
+
+For large changes affecting many repositories:
+
+<CodeGroup>
+```markdown Bad: Full Details (Too Large)
+## Changes for 1000 repositories
+
+### Repository: repo-1
+```json
+{
+  "branches": [...],
+  "teams": [...],
+  "collaborators": [...]
+}
+```
+
+### Repository: repo-2
+...
+(This would create a PR comment too large to post)
+```
+
+```markdown Good: Summary
+## Settings Validation
+
+✅ Validation passed for 1000 repositories
+
+### Changes Summary:
+- 1000 repositories will be updated
+- Changes detected in:
+  - Branch protection: 850 repos
+  - Team permissions: 120 repos
+  - Repository settings: 30 repos
+
+### Sample Changes (first 5 repos):
+1. repo-api: Branch protection updates
+2. repo-web: Team permission updates
+3. repo-service: Repository settings
+4. repo-auth: Branch protection
+5. repo-data: Team permissions
+
+View detailed changes in check run output.
+```
+</CodeGroup>
+
+### Disable PR Comments
+
+For very large organizations, disable PR comments entirely:
+
+```bash .env
+ENABLE_PR_COMMENT=false
+```
+
+Details are still available in check runs.
+
+## Performance Metrics
+
+### Time to Process 1000 Repositories
+
+<CodeGroup>
+```yaml Global Settings Change
+Without optimizations:
+  - Load configs: 120 seconds
+  - Compare all repos: 300 seconds
+  - Apply changes (no hasChanges check): 600 seconds
+  - Total: ~17 minutes
+
+With optimizations:
+  - Load configs: 120 seconds
+  - Compare all repos: 300 seconds
+  - Apply only real changes: 60 seconds
+  - Total: ~8 minutes
+
+Improvement: 53% faster
+```
+
+```yaml Single Repo Change
+Without optimizations:
+  - Load all configs: 120 seconds
+  - Compare all repos: 300 seconds
+  - Apply changes: 600 seconds
+  - Total: ~17 minutes
+
+With optimizations:
+  - Load 1 config: 2 seconds
+  - Compare 1 repo: 1 second
+  - Apply changes: 1 second
+  - Total: ~4 seconds
+
+Improvement: 99.6% faster
+```
+</CodeGroup>
+
+### API Calls Saved
+
+<CodeGroup>
+```yaml Without hasChanges Check
+Scheduled sync (1000 repos):
+  - Branch protection: 1000 API calls
+  - Team permissions: 1000 API calls
+  - Repository settings: 1000 API calls
+  - Labels: 1000 API calls
+  - Total: 4000 API calls
+
+Even when nothing changed!
+```
+
+```yaml With hasChanges Check
+Scheduled sync (1000 repos, 10 have drift):
+  - Branch protection: 10 API calls
+  - Team permissions: 5 API calls
+  - Repository settings: 3 API calls
+  - Labels: 2 API calls
+  - Total: 20 API calls
+
+Reduction: 99.5% fewer API calls
+```
+</CodeGroup>
+
+## Best Practices for Performance
+
+### 1. Use Appropriate Sync Frequency
+
+Balance drift prevention with performance:
+
+<CodeGroup>
+```bash High-Security (Expensive)
+# Every 15 minutes
+CRON=*/15 * * * *
+
+# API calls: ~4000/hour (for 1000 repos)
+# Token usage: Multiple tokens per hour
+```
+
+```bash Balanced (Recommended)
+# Every 2-6 hours
+CRON=0 */2 * * *
+
+# API calls: ~300/hour (for 1000 repos)
+# Token usage: 1 token per sync
+```
+
+```bash Low-Impact
+# Daily
+CRON=0 2 * * *
+
+# API calls: ~40/hour (for 1000 repos)
+# Token usage: 1 token per day
+```
+</CodeGroup>
+
+### 2. Leverage Webhook Events
+
+Webhooks are more efficient than scheduled sync:
+
+```yaml
+Webhook event (branch protection changed):
+  - Triggered: Immediately
+  - Repos affected: 1
+  - Config files loaded: 1-3
+  - API calls: 1-2
+  - Duration: <5 seconds
+
+Scheduled sync:
+  - Triggered: Every N hours
+  - Repos affected: All (1000s)
+  - Config files loaded: Thousands
+  - API calls: Dozens to hundreds
+  - Duration: Minutes
+
+Recommendation: Use webhooks as primary, scheduled sync as backup
+```
+
+### 3. Organize Configurations Efficiently
+
+Use suborgs to group related repositories:
+
+<CodeGroup>
+```yaml Bad: All Repo-Level Configs
+.github/
+  settings.yml
+  repos/
+    repo-1.yml
+    repo-2.yml
+    repo-3.yml
+    ... (1000 files)
+
+Problem: Every global change requires loading 1000 files
+```
+
+```yaml Good: Suborg Organization
+.github/
+  settings.yml        # Minimal org-wide settings
+  suborgs/
+    frontend.yml      # 200 repos
+    backend.yml       # 300 repos
+    mobile.yml        # 150 repos
+  repos/
+    special-repo.yml  # Only exceptions
+
+Benefit: Most changes affect one suborg, load fewer files
+```
+</CodeGroup>
+
+### 4. Minimize Repo-Level Overrides
+
+Fewer repo-level files = faster loading:
+
+```yaml
+Anti-pattern:
+  - Every repo has a repos/*.yml file
+  - Files mostly duplicate suborg settings
+  - Result: 1000 files to load and parse
+
+Better:
+  - Most repos inherit from suborg
+  - Only special cases have repos/*.yml
+  - Result: 50 files to load and parse
+```
+
+### 5. Use Restricted Repos for Phased Rollout
+
+Limit scope during initial deployment:
+
+<CodeGroup>
+```yaml Phase 1: Pilot (Fast)
+restrictedRepos:
+  include:
+    - pilot-*  # 10 repos
+
+Processing time: Seconds
+API calls: Minimal
+```
+
+```yaml Phase 2: Division (Moderate)
+restrictedRepos:
+  include:
+    - pilot-*
+    - prod-*   # 100 repos
+
+Processing time: ~1 minute
+API calls: Moderate
+```
+
+```yaml Phase 3: Full Rollout (Slower)
+restrictedRepos:
+  exclude:
+    - admin
+    - .github
+    - safe-settings
+
+# All 1000+ repos
+Processing time: Several minutes
+API calls: High
+```
+</CodeGroup>
+
+### 6. Monitor Performance
+
+Regularly review check run durations:
+
+```bash
+# Check recent sync durations
+gh api repos/:owner/admin/commits/:sha/check-runs \
+  --jq '.check_runs[] | select(.name=="safe-settings") | {completed_at, started_at}'
+
+# Calculate duration
+started=$(date -d "2024-03-15T10:00:00Z" +%s)
+completed=$(date -d "2024-03-15T10:08:45Z" +%s)
+echo "Duration: $((completed - started)) seconds"
+```
+
+## Troubleshooting Performance Issues
+
+### Sync Taking Too Long
+
+**Problem**: Sync doesn't complete within 1 hour.
+
+**Diagnosis**:
+
+```bash
+# Check number of repos
+gh repo list your-org --limit 10000 | wc -l
+
+# Check config file count
+find .github/repos -name '*.yml' | wc -l
+```
+
+**Solutions**:
+
+1. **Reduce sync frequency**
+   ```bash
+   # From hourly to every 6 hours
+   CRON=0 */6 * * *
+   ```
+
+2. **Use restricted repos**
+   ```yaml
+   restrictedRepos:
+     include:
+       - critical-*  # Manage fewer repos
+   ```
+
+3. **Consolidate configs**
+   ```yaml
+   # Move common settings to suborgs
+   # Reduce number of repo-level files
+   ```
+
+### High API Usage
+
+**Problem**: Approaching rate limits frequently.
+
+**Diagnosis**:
+
+```bash
+# Monitor rate limit
+watch -n 60 'gh api rate_limit --jq .resources.core'
+```
+
+**Solutions**:
+
+1. **Verify hasChanges is working**
+   ```javascript
+   // Add logging
+   console.log(`hasChanges: ${changes.hasChanges}`)
+   ```
+
+2. **Reduce sync frequency**
+3. **Use webhooks instead of scheduled sync**
+4. **Check for comparison bugs** (false positives)
+
+### Slow Configuration Loading
+
+**Problem**: Loading configs takes too long.
+
+**Diagnosis**:
+
+```bash
+# Count config files
+find .github -name '*.yml' -o -name '*.yaml' | wc -l
+
+# Check file sizes
+find .github -name '*.yml' -exec wc -l {} + | sort -n
+```
+
+**Solutions**:
+
+1. **Reduce number of repo configs**
+2. **Optimize file sizes** (remove comments, minimize duplication)
+3. **Use suborg configs** instead of individual repo configs
+
+## Scaling Considerations
+
+### Small Organizations (1-100 repos)
+
+```yaml
+Configuration:
+  - Mostly global settings
+  - Few repo overrides
+  - Aggressive sync schedule
+
+Performance:
+  - Sync time: Seconds
+  - API calls: Minimal
+  - No optimization needed
+```
+
+### Medium Organizations (100-1000 repos)
+
+```yaml
+Configuration:
+  - Suborg organization
+  - Selective repo overrides
+  - Moderate sync schedule
+
+Performance:
+  - Sync time: 1-5 minutes
+  - API calls: Moderate
+  - Standard optimizations sufficient
+```
+
+### Large Organizations (1000+ repos)
+
+```yaml
+Configuration:
+  - Heavy suborg usage
+  - Minimal repo overrides
+  - Conservative sync schedule
+  - Restricted repos for phasing
+
+Performance:
+  - Sync time: 5-15 minutes
+  - API calls: High but optimized
+  - All optimizations critical
+```
+
+## Future Optimizations
+
+Potential improvements being considered:
+
+1. **Parallel processing**: Process multiple repos concurrently
+2. **Incremental sync**: Track last sync time, only check changed repos
+3. **Caching**: Cache GitHub state to reduce API calls
+4. **Batch API calls**: Use GraphQL for bulk operations
+5. **Config preprocessing**: Pre-compile configuration hierarchies
+
+## Related Documentation
+
+- [Drift Prevention](/advanced/drift-prevention)
+- [Restricted Repositories](/advanced/restricted-repos)
+- [Configuration Hierarchy](/configuration/hierarchy)
+- [Scheduled Sync](/api/environment-variables#cron)
